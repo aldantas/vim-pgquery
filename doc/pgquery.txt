@@ -1,0 +1,120 @@
+*pgquery.txt*                 Named PostgreSQL connections for Vim
+
+==============================================================================
+CONTENTS                                                     *pgquery-contents*
+
+  1. Introduction.......................|pgquery|
+  2. Requirements.......................|pgquery-requirements|
+  3. Commands...........................|pgquery-commands|
+  4. Project selection..................|pgquery-projects|
+  5. Storage and security...............|pgquery-storage|
+  6. Mappings...........................|pgquery-mappings|
+  7. Migrating..........................|pgquery-migrating|
+
+==============================================================================
+INTRODUCTION                                                       *pgquery*
+
+vim-pgquery executes the nonblank SQL block under the cursor with psql. Named
+connections are persisted centrally, while the active connection is local to
+each buffer. Selecting a connection does not contact PostgreSQL; access occurs
+only when a query or terminal is started.
+
+==============================================================================
+REQUIREMENTS                                           *pgquery-requirements*
+
+Vim 8 or Vim 9 with JSON support is required. |:DBExecute| needs |+job| and
+|:DBTerminal| needs |+terminal|. Those features are checked only when their
+commands are used. The psql program must be installed and available in $PATH.
+Neovim is not a supported target.
+
+==============================================================================
+COMMANDS                                                   *pgquery-commands*
+
+                                                               *:DBNew*
+:DBNew          Prompt for a unique friendly name and a PostgreSQL URL. URL
+                input is hidden. The URL must start with postgres:// or
+                postgresql:// and contain no whitespace. The new connection
+                is selected for the current buffer and |getcwd()| is mapped
+                to it.
+
+                                                           *:DBConnect*
+:DBConnect      Select a saved connection for the invoking buffer. A popup is
+                used when |popup_menu()| exists, with |inputlist()| as the
+                fallback. Canceling does not alter the selection. Labels omit
+                passwords, query parameters, and fragments.
+
+                                                        *:DBSetProject*
+:DBSetProject [directory]
+                Map the current buffer's selected connection to {directory},
+                or |getcwd()| when omitted. The directory must exist.
+
+                                                       *:DBExecute*
+:DBExecute      Run the nonblank block containing the cursor asynchronously.
+                Blank lines delimit blocks. Output and errors are accumulated
+                independently for every job and displayed in a read-only
+                scratch split. A nonzero psql exit status is reported. The
+                temporary SQL file is removed when the job exits.
+
+                                                        *:DBTerminal*
+:DBTerminal     Open psql with the current buffer's connection in a Vim
+                terminal split.
+
+No command executes through a shell: URLs are process argument-list entries.
+
+==============================================================================
+PROJECT SELECTION                                           *pgquery-projects*
+
+On entry to a *.sql buffer, pgquery canonicalizes the file's directory,
+resolves symlinks, and searches its ancestors. The nearest exact directory
+mapping wins. Complete components are compared, so /project/app cannot match
+/project/application.
+
+Selections use b:pgquery_connection and are never global. An unmapped buffer
+remains disconnected unless a connection was explicitly selected in that
+buffer. A stale mapping or a missing named connection disconnects the buffer
+and reports an error; pgquery never guesses a fallback connection.
+
+==============================================================================
+STORAGE AND SECURITY                                         *pgquery-storage*
+
+The default store is:
+
+  ~/.vim/pgquery.json
+
+Override it before pgquery loads: >
+  let g:pgquery_store_path = '~/.config/vim/pgquery.json'
+<
+The version 1 document has this shape: >
+  {
+    "version": 1,
+    "connections": {"local": "postgresql://user@localhost/app"},
+    "projects": {"/home/me/app": "local"}
+  }
+<
+Project keys are canonical absolute directories. Writes use an atomic rename,
+and the store has mode 0600. If existing storage is malformed or has an invalid
+schema, it is not overwritten. Correct it or move it before trying again.
+
+Passwords in URLs are plaintext and protected only by filesystem permissions.
+For stronger protection, omit the password and use .pgpass or another external
+credential provider. Popup labels redact passwords and URL parameters.
+
+Editing/deleting connections and removing mappings are outside version 1.
+Because duplicate names are rejected, those operations require deliberately
+editing or removing the protected JSON store.
+
+==============================================================================
+MAPPINGS                                                   *pgquery-mappings*
+
+No mappings are installed. Examples: >
+  nnoremap <silent> <leader>dq :DBExecute<CR>
+  nnoremap <silent> <leader>dt :DBTerminal<CR>
+<
+==============================================================================
+MIGRATING                                                 *pgquery-migrating*
+
+Remove any old `source sql.vim` line from your vimrc. The old .dev.dburl,
+g:db, SetDBFile command, and global functions are not supported. Use |:DBNew|
+to import each database URL into the protected central store.
+
+vim:tw=78:ts=8:noet:ft=help:norl:
