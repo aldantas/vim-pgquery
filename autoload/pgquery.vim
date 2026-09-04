@@ -158,6 +158,40 @@ function! s:mapping_for_directory(projects, directory) abort
   return []
 endfunction
 
+function! s:activate_buffer(buffer, name, url, explicit) abort
+  call setbufvar(a:buffer, 'pgquery_connection', a:name)
+  call setbufvar(a:buffer, 'pgquery_connection_explicit', a:explicit)
+  " vim-dadbod and vim-dadbod-completion discover buffer connections here.
+  call setbufvar(a:buffer, 'db', a:url)
+  call setbufvar(a:buffer, 'pgquery_dadbod_url', a:url)
+endfunction
+
+function! s:disconnect_buffer(buffer) abort
+  let managed_url = getbufvar(a:buffer, 'pgquery_dadbod_url', v:null)
+  let current_url = getbufvar(a:buffer, 'db', v:null)
+
+  if a:buffer == bufnr('%')
+    if type(managed_url) == v:t_string
+          \ && type(current_url) == v:t_string
+          \ && current_url ==# managed_url
+      unlet! b:db
+    endif
+    unlet! b:pgquery_connection
+    unlet! b:pgquery_connection_explicit
+    unlet! b:pgquery_dadbod_url
+  else
+    if type(managed_url) == v:t_string
+          \ && type(current_url) == v:t_string
+          \ && current_url ==# managed_url
+      " Vim has no deletebufvar(); leave a neutral value until next entry.
+      call setbufvar(a:buffer, 'db', '')
+    endif
+    call setbufvar(a:buffer, 'pgquery_connection', v:null)
+    call setbufvar(a:buffer, 'pgquery_connection_explicit', 0)
+    call setbufvar(a:buffer, 'pgquery_dadbod_url', v:null)
+  endif
+endfunction
+
 function! pgquery#new(name, url) abort
   let name = trim(a:name)
   if empty(name)
@@ -184,8 +218,7 @@ function! pgquery#new(name, url) abort
   if !s:write_store(store)
     return 0
   endif
-  let b:pgquery_connection = name
-  let b:pgquery_connection_explicit = 1
+  call s:activate_buffer(bufnr('%'), name, a:url, 1)
   echomsg 'pgquery: saved "' . name . '" and mapped ' . root
   return 1
 endfunction
@@ -229,12 +262,10 @@ function! s:select_connection(buffer, name) abort
     return 0
   endif
   if !has_key(store.connections, a:name)
-    call setbufvar(a:buffer, 'pgquery_connection', v:null)
-    call setbufvar(a:buffer, 'pgquery_connection_explicit', 0)
+    call s:disconnect_buffer(a:buffer)
     return s:error('connection "' . a:name . '" no longer exists')
   endif
-  call setbufvar(a:buffer, 'pgquery_connection', a:name)
-  call setbufvar(a:buffer, 'pgquery_connection_explicit', 1)
+  call s:activate_buffer(a:buffer, a:name, store.connections[a:name], 1)
   echomsg 'pgquery: buffer connected to "' . a:name . '"'
   return 1
 endfunction
@@ -279,8 +310,7 @@ function! pgquery#set_project(path) abort
     return 0
   endif
   if !has_key(store.connections, b:pgquery_connection)
-    unlet b:pgquery_connection
-    unlet! b:pgquery_connection_explicit
+    call s:disconnect_buffer(bufnr('%'))
     return s:error('the selected connection is missing from storage; select another with :DBConnect')
   endif
   try
@@ -308,34 +338,29 @@ function! pgquery#select_for_buffer() abort
   endif
   let store = s:read_store(0)
   if store is v:null
-    unlet! b:pgquery_connection
-    unlet! b:pgquery_connection_explicit
+    call s:disconnect_buffer(bufnr('%'))
     return 0
   endif
   try
     let directory = s:canonical_file_directory(bufnr('%'))
   catch
-    unlet! b:pgquery_connection
-    unlet! b:pgquery_connection_explicit
+    call s:disconnect_buffer(bufnr('%'))
     return s:error(v:exception)
   endtry
   let mapping = s:mapping_for_directory(store.projects, directory)
   if empty(mapping)
     " Only an explicit buffer-local selection remains valid when unmapped.
     if !get(b:, 'pgquery_connection_explicit', 0)
-      unlet! b:pgquery_connection
-      unlet! b:pgquery_connection_explicit
+      call s:disconnect_buffer(bufnr('%'))
     endif
     return 0
   endif
   let name = mapping[1]
   if !has_key(store.connections, name)
-    unlet! b:pgquery_connection
-    unlet! b:pgquery_connection_explicit
+    call s:disconnect_buffer(bufnr('%'))
     return s:error('project ' . mapping[0] . ' refers to missing connection "' . name . '"; fix the protected store')
   endif
-  let b:pgquery_connection = name
-  let b:pgquery_connection_explicit = 0
+  call s:activate_buffer(bufnr('%'), name, store.connections[name], 0)
   return 1
 endfunction
 
@@ -346,12 +371,12 @@ function! s:active_connection() abort
   endif
   let store = s:read_store(0)
   if store is v:null
+    call s:disconnect_buffer(bufnr('%'))
     return v:null
   endif
   if !has_key(store.connections, b:pgquery_connection)
     let missing = b:pgquery_connection
-    unlet b:pgquery_connection
-    unlet! b:pgquery_connection_explicit
+    call s:disconnect_buffer(bufnr('%'))
     call s:error('connection "' . missing . '" is missing from storage; the buffer was disconnected')
     return v:null
   endif

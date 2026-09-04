@@ -56,6 +56,15 @@ disconnected, while a connection explicitly chosen with `:DBConnect` remains
 selected for that buffer. Missing connections and stale project mappings fail
 closed rather than falling back to another database.
 
+For interoperability with `vim-dadbod` and `vim-dadbod-completion`, the
+selected URL is also exposed as buffer-local `b:db`. This makes an SQL
+`omnifunc` such as `vim_dadbod_completion#omni` use the same connection without
+creating a global database setting.
+
+```vim
+autocmd FileType sql setlocal omnifunc=vim_dadbod_completion#omni
+```
+
 ## Storage and credentials
 
 State is stored as versioned JSON at `~/.vim/pgquery.json`. Set a different

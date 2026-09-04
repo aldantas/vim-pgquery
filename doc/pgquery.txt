@@ -74,6 +74,11 @@ remains disconnected unless a connection was explicitly selected in that
 buffer. A stale mapping or a missing named connection disconnects the buffer
 and reports an error; pgquery never guesses a fallback connection.
 
+The selected URL is mirrored to buffer-local b:db for compatibility with
+vim-dadbod and vim-dadbod-completion. Pgquery removes that value when it
+disconnects the buffer, but only when b:db still contains the value pgquery
+assigned; a value subsequently set by another plugin is preserved.
+
 ==============================================================================
 STORAGE AND SECURITY                                         *pgquery-storage*
 
