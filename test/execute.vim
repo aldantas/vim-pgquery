@@ -61,11 +61,18 @@ try
         \ "select 'selected two';",
         \ "select 'selected three';"], getline(1, '$'))
 
+  let s:result_buffer = bufnr('%')
+  let s:window_count = winnr('$')
   wincmd p
+  let s:source_buffer = bufnr('%')
   call cursor(5, 1)
   DBExecute
   call assert_true(s:wait_for_result(), 'cursor-block query did not finish')
   call assert_equal('[pgquery local]', bufname('%'))
+  call assert_equal(s:result_buffer, bufnr('%'))
+  call assert_equal(s:window_count, winnr('$'))
+  call assert_equal(1, len(win_findbuf(s:result_buffer)))
+  call assert_true(bufwinid(s:source_buffer) > 0)
   call assert_equal([
         \ "select 'selected two';",
         \ "select 'selected three';"], getline(1, '$'))

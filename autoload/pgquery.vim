@@ -654,7 +654,12 @@ function! s:show_job_result(state, status) abort
   let result_name = '[pgquery ' . a:state.name . ']'
   let result_buffer = bufnr(result_name)
   if result_buffer > 0
-    silent execute 'belowright sbuffer ' . result_buffer
+    let result_window = bufwinid(result_buffer)
+    if result_window > 0
+      call win_gotoid(result_window)
+    else
+      silent execute 'belowright sbuffer ' . result_buffer
+    endif
     setlocal modifiable noreadonly
     silent %delete _
   else
