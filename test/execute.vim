@@ -12,10 +12,10 @@ call mkdir(s:bin_directory, 'p')
 
 function! s:wait_for_result() abort
   let deadline = reltime()
-  while bufname('%') !~# '^\[pgquery ' && reltimefloat(reltime(deadline)) < 2
+  while bufname('%') !=# '[pgquery local]' && reltimefloat(reltime(deadline)) < 2
     sleep 10m
   endwhile
-  return bufname('%') =~# '^\[pgquery '
+  return bufname('%') ==# '[pgquery local]'
 endfunction
 
 try
@@ -51,16 +51,21 @@ try
         \ "select 'outside too';"])
 
   3,6DBExecute
+  call assert_notmatch('pgquery: started query', execute('messages'))
   call assert_true(s:wait_for_result(), 'range query did not finish')
+  call assert_equal('[pgquery local]', bufname('%'))
+  call assert_false(exists('b:pgquery_job_id'))
+  call assert_notmatch('\[pgquery local\]', execute('messages'))
   call assert_equal([
         \ "select 'selected one';",
         \ "select 'selected two';",
         \ "select 'selected three';"], getline(1, '$'))
 
-  bwipeout!
+  wincmd p
   call cursor(5, 1)
   DBExecute
   call assert_true(s:wait_for_result(), 'cursor-block query did not finish')
+  call assert_equal('[pgquery local]', bufname('%'))
   call assert_equal([
         \ "select 'selected two';",
         \ "select 'selected three';"], getline(1, '$'))

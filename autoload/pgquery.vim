@@ -1,6 +1,5 @@
 let s:store_version = 1
-let s:jobs = {}
-let s:next_job_id = 1
+let s:jobs = []
 
 function! s:error(message) abort
   echohl ErrorMsg
@@ -645,19 +644,25 @@ function! s:sql_block(line_number) abort
   return getline(first, last)
 endfunction
 
-function! s:on_job_output(identifier, channel, message) abort
-  let key = string(a:identifier)
-  if has_key(s:jobs, key) && !empty(a:message)
-    call add(s:jobs[key].output, a:message)
+function! s:on_job_output(state, channel, message) abort
+  if index(s:jobs, a:state) >= 0 && !empty(a:message)
+    call add(a:state.output, a:message)
   endif
 endfunction
 
 function! s:show_job_result(state, status) abort
-  execute 'belowright new'
-  setlocal buftype=nofile bufhidden=wipe noswapfile nobuflisted
+  let result_name = '[pgquery ' . a:state.name . ']'
+  let result_buffer = bufnr(result_name)
+  if result_buffer > 0
+    silent execute 'belowright sbuffer ' . result_buffer
+    setlocal modifiable noreadonly
+    silent %delete _
+  else
+    silent execute 'belowright new'
+    setlocal buftype=nofile bufhidden=wipe noswapfile nobuflisted
+    silent execute 'file ' . fnameescape(result_name)
+  endif
   let b:pgquery_exit_status = a:status
-  let b:pgquery_job_id = a:state.id
-  execute 'file ' . fnameescape('[pgquery ' . a:state.name . ' #' . a:state.id . ']')
   let lines = copy(a:state.output)
   if empty(lines)
     let lines = ['(no output)']
@@ -671,16 +676,16 @@ function! s:show_job_result(state, status) abort
   setlocal nomodified readonly nomodifiable
 endfunction
 
-function! s:on_job_exit(identifier, job, status) abort
-  let key = string(a:identifier)
-  if !has_key(s:jobs, key)
+function! s:on_job_exit(state, job, status) abort
+  let job_index = index(s:jobs, a:state)
+  if job_index < 0
     return
   endif
-  let state = remove(s:jobs, key)
-  if !empty(state.temporary)
-    call delete(state.temporary)
+  call remove(s:jobs, job_index)
+  if !empty(a:state.temporary)
+    call delete(a:state.temporary)
   endif
-  call s:show_job_result(state, a:status)
+  call s:show_job_result(a:state, a:status)
   if a:status != 0
     call s:error('psql exited with status ' . a:status)
   endif
@@ -715,33 +720,30 @@ function! pgquery#execute(...) abort
     call delete(temporary)
     return s:error('cannot create temporary SQL file: ' . v:exception)
   endtry
-  let identifier = s:next_job_id
-  let s:next_job_id += 1
-  let key = string(identifier)
-  let s:jobs[key] = {'id': identifier, 'name': connection.name, 'temporary': temporary, 'output': []}
+  let state = {'name': connection.name, 'temporary': temporary, 'output': []}
+  call add(s:jobs, state)
   let command = ['psql', connection.url, '-f', temporary]
   try
     let job = job_start(command, {
           \ 'out_mode': 'nl', 'err_mode': 'nl',
-          \ 'out_cb': function('s:on_job_output', [identifier]),
-          \ 'err_cb': function('s:on_job_output', [identifier]),
-          \ 'exit_cb': function('s:on_job_exit', [identifier])})
+          \ 'out_cb': function('s:on_job_output', [state]),
+          \ 'err_cb': function('s:on_job_output', [state]),
+          \ 'exit_cb': function('s:on_job_exit', [state])})
   catch
     call delete(temporary)
-    call remove(s:jobs, key)
+    call remove(s:jobs, index(s:jobs, state))
     return s:error('could not start psql: ' . v:exception)
   endtry
   if job_status(job) ==# 'fail'
     call delete(temporary)
-    call remove(s:jobs, key)
+    call remove(s:jobs, index(s:jobs, state))
     return s:error('could not start psql; make sure it is installed and in PATH')
   endif
-  echomsg 'pgquery: started query #' . identifier . ' using "' . connection.name . '"'
-  return identifier
+  return 1
 endfunction
 
 function! pgquery#cleanup() abort
-  for state in values(s:jobs)
+  for state in s:jobs
     if !empty(state.temporary)
       call delete(state.temporary)
     endif
