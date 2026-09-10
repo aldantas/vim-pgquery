@@ -59,10 +59,19 @@ closed rather than falling back to another database.
 For interoperability with `vim-dadbod` and `vim-dadbod-completion`, the
 selected URL is also exposed as buffer-local `b:db`. This makes an SQL
 `omnifunc` such as `vim_dadbod_completion#omni` use the same connection without
-creating a global database setting.
+creating a global database setting. If `vim-dadbod-completion` is loaded,
+pgquery connects and starts warming its completion cache as soon as a mapped
+SQL buffer is opened, so the first completion does not have to initialize it.
 
 ```vim
 autocmd FileType sql setlocal omnifunc=vim_dadbod_completion#omni
+```
+
+To retain vim-dadbod-completion's lazy connection behavior, set this before
+plugins are loaded:
+
+```vim
+let g:pgquery_eager_dadbod_completion = 0
 ```
 
 ## Storage and credentials

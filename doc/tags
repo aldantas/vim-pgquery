@@ -3,6 +3,7 @@
 :DBNew	pgquery.txt	/*:DBNew*
 :DBSetProject	pgquery.txt	/*:DBSetProject*
 :DBTerminal	pgquery.txt	/*:DBTerminal*
+g:pgquery_eager_dadbod_completion	pgquery.txt	/*g:pgquery_eager_dadbod_completion*
 pgquery	pgquery.txt	/*pgquery*
 pgquery-commands	pgquery.txt	/*pgquery-commands*
 pgquery-contents	pgquery.txt	/*pgquery-contents*

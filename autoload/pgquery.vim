@@ -158,12 +158,36 @@ function! s:mapping_for_directory(projects, directory) abort
   return []
 endfunction
 
+function! s:warm_dadbod_completion(buffer, url) abort
+  if !get(g:, 'pgquery_eager_dadbod_completion', 1)
+        \ || !exists('g:vim_dadbod_completion_loaded')
+        \ || a:buffer != bufnr('%')
+        \ || getbufvar(a:buffer, '&filetype') !=# 'sql'
+    return 0
+  endif
+  if getbufvar(a:buffer, 'pgquery_dadbod_completion_url', '') ==# a:url
+    return 1
+  endif
+
+  " The completion plugin's FileType hook can run before pgquery's
+  " BufReadPost hook sets b:db. Prime its cache now that the URL is known.
+  call setbufvar(a:buffer, 'pgquery_dadbod_completion_url', a:url)
+  try
+    call vim_dadbod_completion#fetch(a:buffer)
+  catch
+    let message = substitute(v:exception, '^Vim\%((\a\+)\)\=:', '', '')
+    return s:error('could not initialize vim-dadbod-completion: ' . message)
+  endtry
+  return 1
+endfunction
+
 function! s:activate_buffer(buffer, name, url, explicit) abort
   call setbufvar(a:buffer, 'pgquery_connection', a:name)
   call setbufvar(a:buffer, 'pgquery_connection_explicit', a:explicit)
   " vim-dadbod and vim-dadbod-completion discover buffer connections here.
   call setbufvar(a:buffer, 'db', a:url)
   call setbufvar(a:buffer, 'pgquery_dadbod_url', a:url)
+  call s:warm_dadbod_completion(a:buffer, a:url)
 endfunction
 
 function! s:disconnect_buffer(buffer) abort
@@ -179,6 +203,7 @@ function! s:disconnect_buffer(buffer) abort
     unlet! b:pgquery_connection
     unlet! b:pgquery_connection_explicit
     unlet! b:pgquery_dadbod_url
+    unlet! b:pgquery_dadbod_completion_url
   else
     if type(managed_url) == v:t_string
           \ && type(current_url) == v:t_string
@@ -189,6 +214,7 @@ function! s:disconnect_buffer(buffer) abort
     call setbufvar(a:buffer, 'pgquery_connection', v:null)
     call setbufvar(a:buffer, 'pgquery_connection_explicit', 0)
     call setbufvar(a:buffer, 'pgquery_dadbod_url', v:null)
+    call setbufvar(a:buffer, 'pgquery_dadbod_completion_url', v:null)
   endif
 endfunction
 

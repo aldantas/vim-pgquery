@@ -16,8 +16,9 @@ INTRODUCTION                                                       *pgquery*
 
 vim-pgquery executes the nonblank SQL block under the cursor with psql. Named
 connections are persisted centrally, while the active connection is local to
-each buffer. Selecting a connection does not contact PostgreSQL; access occurs
-only when a query or terminal is started.
+each buffer. Selecting a connection does not contact PostgreSQL unless eager
+vim-dadbod-completion integration is active; otherwise access occurs only when
+a query or terminal is started.
 
 ==============================================================================
 REQUIREMENTS                                           *pgquery-requirements*
@@ -78,6 +79,15 @@ The selected URL is mirrored to buffer-local b:db for compatibility with
 vim-dadbod and vim-dadbod-completion. Pgquery removes that value when it
 disconnects the buffer, but only when b:db still contains the value pgquery
 assigned; a value subsequently set by another plugin is preserved.
+
+When vim-dadbod-completion is loaded, pgquery connects and starts warming its
+cache after selecting a mapped SQL buffer. This avoids delaying the first
+completion while its FileType hook waits for b:db.
+
+                                      *g:pgquery_eager_dadbod_completion*
+Set the following before plugins load to retain lazy initialization: >
+  let g:pgquery_eager_dadbod_completion = 0
+<
 
 ==============================================================================
 STORAGE AND SECURITY                                         *pgquery-storage*
