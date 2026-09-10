@@ -40,6 +40,9 @@ try
   call assert_equal(1,
         \ pgquery#new('local', 'postgresql://user@localhost/database'))
 
+  silent execute 'file ' . fnameescape(s:project . '/queries.sql')
+  let s:source_buffer = bufnr('%')
+  let s:initial_window_count = winnr('$')
   call setline(1, [
         \ "select 'outside';",
         \ '',
@@ -56,6 +59,17 @@ try
   call assert_equal('[pgquery local]', bufname('%'))
   call assert_false(exists('b:pgquery_job_id'))
   call assert_notmatch('\[pgquery local\]', execute('messages'))
+  call assert_equal(s:initial_window_count + 1, winnr('$'))
+  call assert_true(bufwinid(s:source_buffer) > 0)
+  call assert_equal([
+        \ "select 'outside';",
+        \ '',
+        \ "select 'selected one';",
+        \ '',
+        \ "select 'selected two';",
+        \ "select 'selected three';",
+        \ '',
+        \ "select 'outside too';"], getbufline(s:source_buffer, 1, '$'))
   call assert_equal([
         \ "select 'selected one';",
         \ "select 'selected two';",
@@ -64,7 +78,7 @@ try
   let s:result_buffer = bufnr('%')
   let s:window_count = winnr('$')
   wincmd p
-  let s:source_buffer = bufnr('%')
+  call assert_equal(s:source_buffer, bufnr('%'))
   call cursor(5, 1)
   DBExecute
   call assert_true(s:wait_for_result(), 'cursor-block query did not finish')

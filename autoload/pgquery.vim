@@ -650,9 +650,18 @@ function! s:on_job_output(state, channel, message) abort
   endif
 endfunction
 
+function! s:buffer_named(name) abort
+  for buffer in getbufinfo()
+    if bufname(buffer.bufnr) ==# a:name
+      return buffer.bufnr
+    endif
+  endfor
+  return -1
+endfunction
+
 function! s:show_job_result(state, status) abort
   let result_name = '[pgquery ' . a:state.name . ']'
-  let result_buffer = bufnr(result_name)
+  let result_buffer = s:buffer_named(result_name)
   if result_buffer > 0
     let result_window = bufwinid(result_buffer)
     if result_window > 0
