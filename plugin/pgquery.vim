@@ -9,8 +9,13 @@ endif
 
 command! -nargs=0 DBNew call pgquery#new_prompt()
 command! -nargs=0 DBConnect call pgquery#connect()
+command! -nargs=? -complete=customlist,pgquery#complete_connections DBEdit
+      \ call pgquery#edit_prompt(<q-args>)
+command! -nargs=? -complete=customlist,pgquery#complete_connections DBDelete
+      \ call pgquery#delete_prompt(<q-args>)
 command! -nargs=? -complete=dir DBSetProject call pgquery#set_project(<q-args>)
-command! -nargs=0 DBExecute call pgquery#execute()
+command! -nargs=0 -range DBExecute
+      \ call pgquery#execute(<range>, <line1>, <line2>)
 command! -nargs=0 DBTerminal call pgquery#terminal()
 
 augroup pgquery

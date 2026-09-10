@@ -1,4 +1,6 @@
 :DBConnect	pgquery.txt	/*:DBConnect*
+:DBDelete	pgquery.txt	/*:DBDelete*
+:DBEdit	pgquery.txt	/*:DBEdit*
 :DBExecute	pgquery.txt	/*:DBExecute*
 :DBNew	pgquery.txt	/*:DBNew*
 :DBSetProject	pgquery.txt	/*:DBSetProject*

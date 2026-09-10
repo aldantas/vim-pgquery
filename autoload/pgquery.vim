@@ -232,7 +232,7 @@ function! pgquery#new(name, url) abort
     return 0
   endif
   if has_key(store.connections, name)
-    return s:error('connection "' . name . '" already exists; edit or remove the protected store deliberately to replace it')
+    return s:error('connection "' . name . '" already exists; use :DBEdit to change it')
   endif
   try
     let root = s:canonical_directory(getcwd())
@@ -247,6 +247,219 @@ function! pgquery#new(name, url) abort
   call s:activate_buffer(bufnr('%'), name, a:url, 1)
   echomsg 'pgquery: saved "' . name . '" and mapped ' . root
   return 1
+endfunction
+
+function! s:update_connected_buffers(old_name, new_name, new_url) abort
+  for buffer in range(1, bufnr('$'))
+    if !bufexists(buffer)
+          \ || getbufvar(buffer, 'pgquery_connection', v:null) !=# a:old_name
+      continue
+    endif
+
+    let managed_url = getbufvar(buffer, 'pgquery_dadbod_url', v:null)
+    let current_url = getbufvar(buffer, 'db', v:null)
+    call setbufvar(buffer, 'pgquery_connection', a:new_name)
+    call setbufvar(buffer, 'pgquery_dadbod_url', a:new_url)
+    call setbufvar(buffer, 'pgquery_dadbod_completion_url', v:null)
+
+    " Do not overwrite b:db when another plugin changed it after pgquery did.
+    if type(managed_url) == v:t_string
+          \ && type(current_url) == v:t_string
+          \ && current_url ==# managed_url
+      call setbufvar(buffer, 'db', a:new_url)
+      call s:warm_dadbod_completion(buffer, a:new_url)
+    endif
+  endfor
+endfunction
+
+" With two arguments, change only the URL. A third argument also renames it.
+function! pgquery#edit(name, ...) abort
+  if a:0 == 1
+    let new_name = trim(a:name)
+    let url = a:1
+  elseif a:0 == 2
+    let new_name = trim(a:1)
+    let url = a:2
+  else
+    return s:error('edit expects an existing name, optional new name, and URL')
+  endif
+  if empty(new_name)
+    return s:error('connection name must not be empty')
+  endif
+  if !s:valid_url(url)
+    return s:error('URL must be a nonempty postgres:// or postgresql:// URL without whitespace')
+  endif
+
+  let store = s:read_store(0)
+  if store is v:null
+    return 0
+  endif
+  if !has_key(store.connections, a:name)
+    return s:error('connection "' . a:name . '" does not exist')
+  endif
+  if new_name !=# a:name && has_key(store.connections, new_name)
+    return s:error('connection "' . new_name . '" already exists')
+  endif
+
+  if new_name !=# a:name
+    call remove(store.connections, a:name)
+    for root in keys(store.projects)
+      if store.projects[root] ==# a:name
+        let store.projects[root] = new_name
+      endif
+    endfor
+  endif
+  let store.connections[new_name] = url
+  if !s:write_store(store)
+    return 0
+  endif
+
+  call s:update_connected_buffers(a:name, new_name, url)
+  echomsg 'pgquery: updated connection "' . a:name . '"'
+        \ . (new_name ==# a:name ? '' : ' as "' . new_name . '"')
+  return 1
+endfunction
+
+function! s:edit_named_prompt(name) abort
+  let store = s:read_store(0)
+  if store is v:null
+    return 0
+  endif
+  if !has_key(store.connections, a:name)
+    return s:error('connection "' . a:name . '" does not exist')
+  endif
+
+  call inputsave()
+  try
+    let new_name = input('Connection name: ', a:name)
+    if empty(new_name)
+      return 0
+    endif
+    let url = inputsecret('New PostgreSQL URL (leave blank to keep current): ')
+  finally
+    call inputrestore()
+  endtry
+  if empty(url)
+    let url = store.connections[a:name]
+  endif
+  return pgquery#edit(a:name, new_name, url)
+endfunction
+
+function! s:edit_callback(names, popup, result) abort
+  if a:result <= 0 || a:result > len(a:names)
+    return 0
+  endif
+  return s:edit_named_prompt(a:names[a:result - 1])
+endfunction
+
+function! pgquery#edit_prompt(...) abort
+  if a:0 > 0 && !empty(a:1)
+    return s:edit_named_prompt(a:1)
+  endif
+  let store = s:read_store(0)
+  if store is v:null
+    return 0
+  endif
+  let names = sort(keys(store.connections))
+  if empty(names)
+    return s:error('no saved connections; use :DBNew first')
+  endif
+  let labels = map(copy(names), 's:url_label(v:val, store.connections[v:val])')
+  if exists('*popup_menu')
+    call popup_menu(labels, {
+          \ 'title': ' Edit PostgreSQL connection ',
+          \ 'callback': function('s:edit_callback', [names])})
+    return 1
+  endif
+  let choices = map(copy(labels), '(v:key + 1) . ". " . v:val')
+  let choice = inputlist(['Edit PostgreSQL connection:'] + choices)
+  if choice <= 0 || choice > len(names)
+    return 0
+  endif
+  return s:edit_named_prompt(names[choice - 1])
+endfunction
+
+function! pgquery#delete(name) abort
+  let store = s:read_store(0)
+  if store is v:null
+    return 0
+  endif
+  if !has_key(store.connections, a:name)
+    return s:error('connection "' . a:name . '" does not exist')
+  endif
+
+  call remove(store.connections, a:name)
+  let removed_mappings = 0
+  for root in keys(store.projects)
+    if store.projects[root] ==# a:name
+      call remove(store.projects, root)
+      let removed_mappings += 1
+    endif
+  endfor
+  if !s:write_store(store)
+    return 0
+  endif
+
+  for buffer in range(1, bufnr('$'))
+    if bufexists(buffer)
+          \ && getbufvar(buffer, 'pgquery_connection', v:null) ==# a:name
+      call s:disconnect_buffer(buffer)
+    endif
+  endfor
+  echomsg 'pgquery: deleted connection "' . a:name . '" and removed '
+        \ . removed_mappings . ' project mapping' . (removed_mappings == 1 ? '' : 's')
+  return 1
+endfunction
+
+function! s:delete_named_prompt(name) abort
+  let store = s:read_store(0)
+  if store is v:null
+    return 0
+  endif
+  if !has_key(store.connections, a:name)
+    return s:error('connection "' . a:name . '" does not exist')
+  endif
+  let mappings = count(values(store.projects), a:name)
+  let message = 'Delete connection "' . a:name . '"? This also removes '
+        \ . mappings . ' project mapping' . (mappings == 1 ? '' : 's') . '.'
+  if confirm(message, "&Delete\n&Cancel", 2) != 1
+    return 0
+  endif
+  return pgquery#delete(a:name)
+endfunction
+
+function! s:delete_callback(names, popup, result) abort
+  if a:result <= 0 || a:result > len(a:names)
+    return 0
+  endif
+  return s:delete_named_prompt(a:names[a:result - 1])
+endfunction
+
+function! pgquery#delete_prompt(...) abort
+  if a:0 > 0 && !empty(a:1)
+    return s:delete_named_prompt(a:1)
+  endif
+  let store = s:read_store(0)
+  if store is v:null
+    return 0
+  endif
+  let names = sort(keys(store.connections))
+  if empty(names)
+    return s:error('no saved connections; use :DBNew first')
+  endif
+  let labels = map(copy(names), 's:url_label(v:val, store.connections[v:val])')
+  if exists('*popup_menu')
+    call popup_menu(labels, {
+          \ 'title': ' Delete PostgreSQL connection ',
+          \ 'callback': function('s:delete_callback', [names])})
+    return 1
+  endif
+  let choices = map(copy(labels), '(v:key + 1) . ". " . v:val')
+  let choice = inputlist(['Delete PostgreSQL connection:'] + choices)
+  if choice <= 0 || choice > len(names)
+    return 0
+  endif
+  return s:delete_named_prompt(names[choice - 1])
 endfunction
 
 function! pgquery#new_prompt() abort
@@ -280,6 +493,14 @@ function! s:url_label(name, url) abort
     let hostport .= ':5432'
   endif
   return a:name . ' — ' . user . '@' . hostport . '/' . (empty(database) ? '?' : database)
+endfunction
+
+function! pgquery#complete_connections(lead, command_line, cursor_position) abort
+  let store = s:read_store(0)
+  if store is v:null
+    return []
+  endif
+  return filter(sort(keys(store.connections)), 'stridx(v:val, a:lead) == 0')
 endfunction
 
 function! s:select_connection(buffer, name) abort
@@ -465,7 +686,7 @@ function! s:on_job_exit(identifier, job, status) abort
   endif
 endfunction
 
-function! pgquery#execute() abort
+function! pgquery#execute(...) abort
   if !has('job') || !exists('*job_start')
     return s:error(':DBExecute requires Vim compiled with +job')
   endif
@@ -473,9 +694,16 @@ function! pgquery#execute() abort
   if connection is v:null
     return 0
   endif
-  let sql = s:sql_block(line('.'))
-  if empty(sql)
-    return s:error('no nonblank SQL block under the cursor')
+  if a:0 >= 3 && a:1 > 0
+    let sql = getline(a:2, a:3)
+    if join(sql, "\n") !~# '\S'
+      return s:error('no SQL in the selected range')
+    endif
+  else
+    let sql = s:sql_block(line('.'))
+    if empty(sql)
+      return s:error('no nonblank SQL block under the cursor')
+    endif
   endif
   let temporary = tempname() . '.sql'
   try

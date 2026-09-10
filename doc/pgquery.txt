@@ -14,11 +14,11 @@ CONTENTS                                                     *pgquery-contents*
 ==============================================================================
 INTRODUCTION                                                       *pgquery*
 
-vim-pgquery executes the nonblank SQL block under the cursor with psql. Named
-connections are persisted centrally, while the active connection is local to
-each buffer. Selecting a connection does not contact PostgreSQL unless eager
-vim-dadbod-completion integration is active; otherwise access occurs only when
-a query or terminal is started.
+vim-pgquery executes the nonblank SQL block under the cursor, or an explicit
+line range, with psql. Named connections are persisted centrally, while the
+active connection is local to each buffer. Selecting a connection does not
+contact PostgreSQL unless eager vim-dadbod-completion integration is active;
+otherwise access occurs only when a query or terminal is started.
 
 ==============================================================================
 REQUIREMENTS                                           *pgquery-requirements*
@@ -44,17 +44,34 @@ COMMANDS                                                   *pgquery-commands*
                 fallback. Canceling does not alter the selection. Labels omit
                 passwords, query parameters, and fragments.
 
+                                                            *:DBEdit*
+:DBEdit [name]  Change a saved connection's name and URL. If {name} is omitted,
+                choose one from the connection picker. Leave the URL prompt
+                blank to keep the current URL. Renaming also updates every
+                project mapping that refers to the old name. Loaded buffers
+                using the connection are updated immediately.
+
+                                                          *:DBDelete*
+:DBDelete [name]
+                Delete a saved connection after confirmation. If {name} is
+                omitted, choose one from the connection picker. Project
+                mappings that refer to it are removed and loaded buffers using
+                it are disconnected.
+
                                                         *:DBSetProject*
 :DBSetProject [directory]
                 Map the current buffer's selected connection to {directory},
                 or |getcwd()| when omitted. The directory must exist.
 
                                                        *:DBExecute*
-:DBExecute      Run the nonblank block containing the cursor asynchronously.
-                Blank lines delimit blocks. Output and errors are accumulated
-                independently for every job and displayed in a read-only
-                scratch split. A nonzero psql exit status is reported. The
-                temporary SQL file is removed when the job exits.
+:[range]DBExecute
+                Run {range} asynchronously. A Visual selection supplies the
+                range automatically. Without a range, run the nonblank block
+                containing the cursor; blank lines delimit blocks. Output and
+                errors are accumulated independently for every job and shown
+                in a read-only scratch split. A nonzero psql exit status is
+                reported. The temporary SQL file is removed when the job
+                exits.
 
                                                         *:DBTerminal*
 :DBTerminal     Open psql with the current buffer's connection in a Vim
@@ -114,15 +131,15 @@ Passwords in URLs are plaintext and protected only by filesystem permissions.
 For stronger protection, omit the password and use .pgpass or another external
 credential provider. Popup labels redact passwords and URL parameters.
 
-Editing/deleting connections and removing mappings are outside version 1.
-Because duplicate names are rejected, those operations require deliberately
-editing or removing the protected JSON store.
+Use |:DBEdit| to rename a connection or change its URL. Use |:DBDelete| to
+delete one and remove all project mappings that refer to it.
 
 ==============================================================================
 MAPPINGS                                                   *pgquery-mappings*
 
 No mappings are installed. Examples: >
   nnoremap <silent> <leader>dq :DBExecute<CR>
+  xnoremap <silent> <leader>dq :DBExecute<CR>
   nnoremap <silent> <leader>dt :DBTerminal<CR>
 <
 ==============================================================================

@@ -1,9 +1,9 @@
 # vim-pgquery
 
-`vim-pgquery` runs the SQL block under your cursor through PostgreSQL's
-`psql` client. It remembers named database URLs and project directories while
-keeping the selected connection buffer-local, so an unrelated SQL buffer does
-not inherit another project's database.
+`vim-pgquery` runs the SQL block under your cursor—or an explicitly selected
+line range—through PostgreSQL's `psql` client. It remembers named database URLs
+and project directories while keeping the selected connection buffer-local, so
+an unrelated SQL buffer does not inherit another project's database.
 
 The plugin targets Vim 8 and Vim 9. `psql` must be available in `PATH`.
 `:DBExecute` requires Vim's `+job` feature, and `:DBTerminal` requires
@@ -29,11 +29,20 @@ vim -u NONE -c 'helptags ~/.vim/pack/plugins/start/vim-pgquery/doc' -c quit
 - `:DBConnect` selects a saved connection for the current buffer. Vim builds
   with popups use `popup_menu()`; other builds use a numbered prompt. The list
   shows `name — user@host:port/database`, never the password or URL parameters.
+- `:DBEdit [name]` changes a connection's name and URL. When no name is given,
+  it presents the saved-connection picker; leave the URL prompt blank to keep
+  the existing URL. Renames update project mappings, and all loaded buffers
+  using the connection are refreshed.
+- `:DBDelete [name]` deletes a connection after confirmation. When no name is
+  given, it presents the saved-connection picker. Project mappings that use the
+  connection are removed and loaded buffers using it are disconnected.
 - `:DBSetProject [directory]` maps the selected connection to a directory. It
   uses `getcwd()` when the argument is omitted.
 - `:DBExecute` asynchronously runs the nonblank block containing the cursor.
-  Blank lines delimit blocks. Standard output and standard error appear in a
-  read-only scratch split; a failing `psql` status is shown there and reported.
+  Give it a range (including by running it from Visual mode) to execute every
+  selected line instead. Blank lines delimit cursor blocks. Standard output
+  and standard error appear in a read-only scratch split; a failing `psql`
+  status is shown there and reported.
 - `:DBTerminal` opens a Vim terminal running `psql` with the selected
   connection.
 
@@ -41,6 +50,7 @@ The plugin deliberately installs no mappings. Optional examples:
 
 ```vim
 nnoremap <silent> <leader>dq :DBExecute<CR>
+xnoremap <silent> <leader>dq :DBExecute<CR>
 nnoremap <silent> <leader>dt :DBTerminal<CR>
 ```
 
@@ -85,9 +95,8 @@ let g:pgquery_store_path = expand('~/.config/vim/pgquery.json')
 
 Writes use a same-directory temporary file and atomic rename, and set the file
 mode to `0600`. Malformed JSON or an invalid schema is never overwritten; Vim
-reports the path so you can fix or move it. Connection names cannot be replaced
-through commands in v1. To rename, replace, delete, or unmap a connection,
-deliberately edit the protected JSON while Vim is not writing it.
+reports the path so you can fix or move it. `:DBEdit` and `:DBDelete` preserve
+that behavior when changing the store.
 
 Database URLs are plaintext despite the file permissions. Prefer URLs without
 passwords together with `.pgpass` or another PostgreSQL credential mechanism
