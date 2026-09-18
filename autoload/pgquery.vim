@@ -187,6 +187,7 @@ function! s:activate_buffer(buffer, name, url, explicit) abort
   call setbufvar(a:buffer, 'db', a:url)
   call setbufvar(a:buffer, 'pgquery_dadbod_url', a:url)
   call s:warm_dadbod_completion(a:buffer, a:url)
+  redrawstatus!
 endfunction
 
 function! s:disconnect_buffer(buffer) abort
@@ -215,6 +216,25 @@ function! s:disconnect_buffer(buffer) abort
     call setbufvar(a:buffer, 'pgquery_dadbod_url', v:null)
     call setbufvar(a:buffer, 'pgquery_dadbod_completion_url', v:null)
   endif
+  redrawstatus!
+endfunction
+
+function! s:database_from_url(url) abort
+  let rest = substitute(a:url, '^postgres\%(ql\)\?://', '', '')
+  let rest = split(rest, '[?#]', 1)[0]
+  let slash = stridx(rest, '/')
+  return slash < 0 ? '' : matchstr(strpart(rest, slash + 1), '^[^/]*')
+endfunction
+
+" Use this in 'statusline' to show the database without exposing credentials.
+function! pgquery#statusline() abort
+  let name = get(b:, 'pgquery_connection', '')
+  if type(name) != v:t_string || empty(name)
+    return ''
+  endif
+  let url = get(b:, 'pgquery_dadbod_url', '')
+  let database = type(url) == v:t_string ? s:database_from_url(url) : ''
+  return ' [DB: ' . (empty(database) ? name : database) . ']'
 endfunction
 
 function! pgquery#new(name, url) abort
@@ -269,6 +289,7 @@ function! s:update_connected_buffers(old_name, new_name, new_url) abort
       call s:warm_dadbod_completion(buffer, a:new_url)
     endif
   endfor
+  redrawstatus!
 endfunction
 
 " With two arguments, change only the URL. A third argument also renames it.
@@ -480,7 +501,7 @@ function! s:url_label(name, url) abort
   let rest = split(rest, '[?#]', 1)[0]
   let slash = stridx(rest, '/')
   let authority = slash < 0 ? rest : strpart(rest, 0, slash)
-  let database = slash < 0 ? '?' : split(strpart(rest, slash + 1), '/', 1)[0]
+  let database = s:database_from_url(a:url)
   let at = strridx(authority, '@')
   let userinfo = at < 0 ? '' : strpart(authority, 0, at)
   let hostport = at < 0 ? authority : strpart(authority, at + 1)

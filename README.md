@@ -66,6 +66,24 @@ disconnected, while a connection explicitly chosen with `:DBConnect` remains
 selected for that buffer. Missing connections and stale project mappings fail
 closed rather than falling back to another database.
 
+To show the selected database in an existing Vim statusline, add this
+to your vimrc:
+
+```vim
+set laststatus=2
+set statusline+=%{pgquery#statusline()}
+```
+
+`pgquery#statusline()` displays `[DB: database]` for the current buffer and nothing
+when it is disconnected. It updates when you switch buffers, rename a
+connection, or delete one. It uses the database path in the saved URL, falling
+back to the connection name when the URL has no database path. If you use Vim's
+default statusline, set a full format first, for example:
+
+```vim
+set statusline=%f%m%r%=%{pgquery#statusline()}\ %l:%c
+```
+
 For interoperability with `vim-dadbod` and `vim-dadbod-completion`, the
 selected URL is also exposed as buffer-local `b:db`. This makes an SQL
 `omnifunc` such as `vim_dadbod_completion#omni` use the same connection without

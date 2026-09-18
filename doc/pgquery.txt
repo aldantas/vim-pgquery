@@ -7,9 +7,10 @@ CONTENTS                                                     *pgquery-contents*
   2. Requirements.......................|pgquery-requirements|
   3. Commands...........................|pgquery-commands|
   4. Project selection..................|pgquery-projects|
-  5. Storage and security...............|pgquery-storage|
-  6. Mappings...........................|pgquery-mappings|
-  7. Migrating..........................|pgquery-migrating|
+  5. Statusline.........................|pgquery-statusline|
+  6. Storage and security...............|pgquery-storage|
+  7. Mappings...........................|pgquery-mappings|
+  8. Migrating..........................|pgquery-migrating|
 
 ==============================================================================
 INTRODUCTION                                                       *pgquery*
@@ -104,6 +105,24 @@ completion while its FileType hook waits for b:db.
                                       *g:pgquery_eager_dadbod_completion*
 Set the following before plugins load to retain lazy initialization: >
   let g:pgquery_eager_dadbod_completion = 0
+<
+
+==============================================================================
+STATUSLINE                                             *pgquery-statusline*
+
+Append the selected database to an existing |'statusline'|: >
+  set laststatus=2
+  set statusline+=%{pgquery#statusline()}
+<
+                                                   *pgquery#statusline()*
+pgquery#statusline() returns " [DB: database]" for the statusline's buffer, or
+an empty string when disconnected. It uses the database path in the saved URL,
+falling back to the connection name when the URL has no database path. The
+value follows buffer changes, connection edits, and deletions without showing
+credentials.
+
+When using Vim's default statusline, set a complete format first: >
+  set statusline=%f%m%r%=%{pgquery#statusline()}\ %l:%c
 <
 
 ==============================================================================
