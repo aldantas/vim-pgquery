@@ -226,15 +226,13 @@ function! s:database_from_url(url) abort
   return slash < 0 ? '' : matchstr(strpart(rest, slash + 1), '^[^/]*')
 endfunction
 
-" Use this in 'statusline' to show the database without exposing credentials.
+" Use this in 'statusline' to show the selected connection name.
 function! pgquery#statusline() abort
   let name = get(b:, 'pgquery_connection', '')
   if type(name) != v:t_string || empty(name)
     return ''
   endif
-  let url = get(b:, 'pgquery_dadbod_url', '')
-  let database = type(url) == v:t_string ? s:database_from_url(url) : ''
-  return ' [DB: ' . (empty(database) ? name : database) . ']'
+  return ' [DB: ' . name . ']'
 endfunction
 
 function! pgquery#new(name, url) abort

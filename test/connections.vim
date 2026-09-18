@@ -19,12 +19,12 @@ try
   let s:first_buffer = bufnr('%')
   call assert_equal('', pgquery#statusline())
   call assert_equal(1, pgquery#new('local', 'postgresql://user@localhost/one'))
-  call assert_equal(' [DB: one]', pgquery#statusline())
+  call assert_equal(' [DB: local]', pgquery#statusline())
   call assert_equal('postgresql://user@localhost/one',
         \ trim(execute('DBShowURL')))
   if exists('*eval_statusline')
     set statusline=%f%{pgquery#statusline()}
-    call assert_match(' \[DB: one\]',
+    call assert_match(' \[DB: local\]',
           \ eval_statusline(&statusline, {'winid': win_getid()}))
   endif
   call assert_equal(['local'], pgquery#complete_connections('', '', 0))
@@ -37,7 +37,7 @@ try
   execute 'edit ' . fnameescape(s:project . '/mapped.sql')
   let s:mapped_buffer = bufnr('%')
   call assert_equal('local', b:pgquery_connection)
-  call assert_equal(' [DB: one]', pgquery#statusline())
+  call assert_equal(' [DB: local]', pgquery#statusline())
 
   execute 'split ' . fnameescape(s:project . '/overridden.sql')
   let s:overridden_buffer = bufnr('%')
@@ -50,7 +50,7 @@ try
   call assert_equal('postgresql://user@localhost/middle',
         \ getbufvar(s:mapped_buffer, 'db'))
   call assert_equal('postgresql://other-plugin@localhost/override', b:db)
-  call assert_equal(' [DB: middle]', pgquery#statusline())
+  call assert_equal(' [DB: local]', pgquery#statusline())
 
   call assert_equal(1, pgquery#edit(
         \ 'local', 'renamed', 'postgresql://user@localhost/two'))
@@ -68,7 +68,7 @@ try
   call assert_equal('renamed',
         \ getbufvar(s:overridden_buffer, 'pgquery_connection'))
   call assert_equal('postgresql://other-plugin@localhost/override', b:db)
-  call assert_equal(' [DB: two]', pgquery#statusline())
+  call assert_equal(' [DB: renamed]', pgquery#statusline())
 
   call assert_equal(1, pgquery#delete('renamed'))
   let s:store = json_decode(join(readfile(g:pgquery_store_path), "\n"))
@@ -87,6 +87,7 @@ try
   call assert_equal(' [DB: pathless]', pgquery#statusline())
   call assert_equal(1, pgquery#edit('pathless',
         \ 'postgresql://user:secret@localhost/private?sslmode=require'))
+  call assert_equal(' [DB: pathless]', pgquery#statusline())
   call assert_equal('postgresql://user:secret@localhost/private?sslmode=require',
         \ trim(execute('DBShowURL')))
   call assert_equal(1, pgquery#delete('pathless'))

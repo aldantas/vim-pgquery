@@ -115,16 +115,15 @@ Set the following before plugins load to retain lazy initialization: >
 ==============================================================================
 STATUSLINE                                             *pgquery-statusline*
 
-Append the selected database to an existing |'statusline'|: >
+Append the selected connection name to an existing |'statusline'|: >
   set laststatus=2
   set statusline+=%{pgquery#statusline()}
 <
                                                    *pgquery#statusline()*
-pgquery#statusline() returns " [DB: database]" for the statusline's buffer, or
-an empty string when disconnected. It uses the database path in the saved URL,
-falling back to the connection name when the URL has no database path. The
-value follows buffer changes, connection edits, and deletions without showing
-credentials.
+pgquery#statusline() returns " [DB: name]" for the statusline's buffer, or an
+empty string when disconnected. It uses the saved connection name, even when
+that differs from the database in the URL. The value follows buffer changes,
+connection renames, and deletions without showing credentials.
 
 When using Vim's default statusline, set a complete format first: >
   set statusline=%f%m%r%=%{pgquery#statusline()}\ %l:%c
