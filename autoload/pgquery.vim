@@ -349,16 +349,12 @@ function! s:edit_named_prompt(name) abort
     return s:error('connection "' . a:name . '" does not exist')
   endif
 
-  call inputsave()
-  try
-    let new_name = input('Connection name: ', a:name)
-    if empty(new_name)
-      return 0
-    endif
-    let url = inputsecret('New PostgreSQL URL (leave blank to keep current): ')
-  finally
-    call inputrestore()
-  endtry
+  " Keep keys typed after a popup selection available to these prompts.
+  let new_name = input('Connection name: ', a:name)
+  if empty(new_name)
+    return 0
+  endif
+  let url = inputsecret('New PostgreSQL URL (leave blank to keep current): ')
   if empty(url)
     let url = store.connections[a:name]
   endif
@@ -648,6 +644,15 @@ function! s:active_connection() abort
     return v:null
   endif
   return {'name': b:pgquery_connection, 'url': store.connections[b:pgquery_connection]}
+endfunction
+
+function! pgquery#show_url() abort
+  let connection = s:active_connection()
+  if connection is v:null
+    return 0
+  endif
+  echo connection.url
+  return 1
 endfunction
 
 function! s:sql_block(line_number) abort

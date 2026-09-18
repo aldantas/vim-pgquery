@@ -11,6 +11,7 @@ try
   let g:pgquery_store_path = s:test_directory . '/pgquery.json'
   execute 'set runtimepath^=' . fnameescape(s:plugin_directory)
   runtime plugin/pgquery.vim
+  call assert_equal(2, exists(':DBShowURL'))
   call assert_equal(2, exists(':DBEdit'))
   call assert_equal(2, exists(':DBDelete'))
   execute 'cd ' . fnameescape(s:project)
@@ -19,6 +20,8 @@ try
   call assert_equal('', pgquery#statusline())
   call assert_equal(1, pgquery#new('local', 'postgresql://user@localhost/one'))
   call assert_equal(' [DB: one]', pgquery#statusline())
+  call assert_equal('postgresql://user@localhost/one',
+        \ trim(execute('DBShowURL')))
   if exists('*eval_statusline')
     set statusline=%f%{pgquery#statusline()}
     call assert_match(' \[DB: one\]',
@@ -39,6 +42,8 @@ try
   execute 'split ' . fnameescape(s:project . '/overridden.sql')
   let s:overridden_buffer = bufnr('%')
   let b:db = 'postgresql://other-plugin@localhost/override'
+  call assert_equal('postgresql://user@localhost/one',
+        \ trim(execute('DBShowURL')))
 
   call assert_equal(1,
         \ pgquery#edit('local', 'postgresql://user@localhost/middle'))
@@ -80,6 +85,12 @@ try
 
   call assert_equal(1, pgquery#new('pathless', 'postgresql://user@localhost'))
   call assert_equal(' [DB: pathless]', pgquery#statusline())
+  call assert_equal(1, pgquery#edit('pathless',
+        \ 'postgresql://user:secret@localhost/private?sslmode=require'))
+  call assert_equal('postgresql://user:secret@localhost/private?sslmode=require',
+        \ trim(execute('DBShowURL')))
+  call assert_equal(1, pgquery#delete('pathless'))
+  call assert_match('this buffer is disconnected', execute('DBShowURL'))
 finally
   execute 'cd ' . fnameescape(s:original_directory)
   call delete(s:test_directory, 'rf')

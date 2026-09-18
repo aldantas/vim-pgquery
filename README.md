@@ -29,6 +29,8 @@ vim -u NONE -c 'helptags ~/.vim/pack/plugins/start/vim-pgquery/doc' -c quit
 - `:DBConnect` selects a saved connection for the current buffer. Vim builds
   with popups use `popup_menu()`; other builds use a numbered prompt. The list
   shows `name — user@host:port/database`, never the password or URL parameters.
+- `:DBShowURL` displays the current buffer's full saved connection URL. This
+  includes credentials and URL parameters when present.
 - `:DBEdit [name]` changes a connection's name and URL. When no name is given,
   it presents the saved-connection picker; leave the URL prompt blank to keep
   the existing URL. Renames update project mappings, and all loaded buffers
