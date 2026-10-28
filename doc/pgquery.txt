@@ -6,7 +6,7 @@ CONTENTS                                                     *pgquery-contents*
   1. Introduction.......................|pgquery|
   2. Requirements.......................|pgquery-requirements|
   3. Commands...........................|pgquery-commands|
-  4. Project selection..................|pgquery-projects|
+  4. File selection.....................|pgquery-files|
   5. Statusline.........................|pgquery-statusline|
   6. Storage and security...............|pgquery-storage|
   7. Mappings...........................|pgquery-mappings|
@@ -36,12 +36,12 @@ COMMANDS                                                   *pgquery-commands*
 :DBNew          Prompt for a unique friendly name and a PostgreSQL URL. URL
                 input is hidden. The URL must start with postgres:// or
                 postgresql:// and contain no whitespace. The new connection
-                is selected for the current buffer and |getcwd()| is mapped
-                to it.
+                is selected for the current buffer and remembered for
+                its file path.
 
                                                            *:DBConnect*
-:DBConnect      Select a saved connection for the invoking buffer. A popup is
-                used when |popup_menu()| exists, with |inputlist()| as the
+:DBConnect      Select and remember a connection for the invoking file. A
+                popup is used when |popup_menu()| exists, with |inputlist()| as the
                 fallback. Canceling does not alter the selection. Labels omit
                 passwords, query parameters, and fragments.
 
@@ -54,20 +54,15 @@ COMMANDS                                                   *pgquery-commands*
 :DBEdit [name]  Change a saved connection's name and URL. If {name} is omitted,
                 choose one from the connection picker. Leave the URL prompt
                 blank to keep the current URL. Renaming also updates every
-                project mapping that refers to the old name. Loaded buffers
+                file mapping that refers to the old name. Loaded buffers
                 using the connection are updated immediately.
 
                                                           *:DBDelete*
 :DBDelete [name]
                 Delete a saved connection after confirmation. If {name} is
-                omitted, choose one from the connection picker. Project
+                omitted, choose one from the connection picker. File
                 mappings that refer to it are removed and loaded buffers using
                 it are disconnected.
-
-                                                        *:DBSetProject*
-:DBSetProject [directory]
-                Map the current buffer's selected connection to {directory},
-                or |getcwd()| when omitted. The directory must exist.
 
                                                        *:DBExecute*
 :[range]DBExecute
@@ -86,17 +81,18 @@ COMMANDS                                                   *pgquery-commands*
 No command executes through a shell: URLs are process argument-list entries.
 
 ==============================================================================
-PROJECT SELECTION                                           *pgquery-projects*
+FILE SELECTION                                                 *pgquery-files*
 
-On entry to a *.sql buffer, pgquery canonicalizes the file's directory,
-resolves symlinks, and searches its ancestors. The nearest exact directory
-mapping wins. Complete components are compared, so /project/app cannot match
-/project/application.
+On entry to a file buffer, pgquery restores the last connection selected for
+its exact absolute file path, resolving symlinks. DBNew and DBConnect save the
+selection immediately. It survives query execution, buffer switches, reopening
+the file, and restarting Vim. Files in the same directory remain independent.
 
-Selections use b:pgquery_connection and are never global. An unmapped buffer
-remains disconnected unless a connection was explicitly selected in that
-buffer. A stale mapping or a missing named connection disconnects the buffer
-and reports an error; pgquery never guesses a fallback connection.
+Selections use b:pgquery_connection and are never global. A file without a
+saved connection stays disconnected until DBConnect or DBNew is used. A stale
+mapping or missing named connection disconnects the buffer and reports an
+error. Unnamed buffers keep selections in memory; after naming the buffer,
+using its connection remembers the file path too.
 
 The selected URL is mirrored to buffer-local b:db for compatibility with
 vim-dadbod and vim-dadbod-completion. Pgquery removes that value when it
@@ -104,7 +100,7 @@ disconnects the buffer, but only when b:db still contains the value pgquery
 assigned; a value subsequently set by another plugin is preserved.
 
 When vim-dadbod-completion is loaded, pgquery connects and starts warming its
-cache after selecting a mapped SQL buffer. This avoids delaying the first
+cache after restoring an SQL file's connection. This avoids delaying the first
 completion while its FileType hook waits for b:db.
 
                                       *g:pgquery_eager_dadbod_completion*
@@ -139,14 +135,14 @@ The default store is:
 Override it before pgquery loads: >
   let g:pgquery_store_path = '~/.config/vim/pgquery.json'
 <
-The version 1 document has this shape: >
+The version 2 document has this shape: >
   {
-    "version": 1,
+    "version": 2,
     "connections": {"local": "postgresql://user@localhost/app"},
-    "projects": {"/home/me/app": "local"}
+    "files": {"/home/me/app/queries.sql": "local"}
   }
 <
-Project keys are canonical absolute directories. Writes use an atomic rename,
+File keys are canonical absolute paths. Writes use an atomic rename,
 and the store has mode 0600. If existing storage is malformed or has an invalid
 schema, it is not overwritten. Correct it or move it before trying again.
 
@@ -155,7 +151,7 @@ For stronger protection, omit the password and use .pgpass or another external
 credential provider. Popup labels redact passwords and URL parameters.
 
 Use |:DBEdit| to rename a connection or change its URL. Use |:DBDelete| to
-delete one and remove all project mappings that refer to it.
+delete one and remove all file mappings that refer to it.
 
 ==============================================================================
 MAPPINGS                                                   *pgquery-mappings*
@@ -167,6 +163,10 @@ No mappings are installed. Examples: >
 <
 ==============================================================================
 MIGRATING                                                 *pgquery-migrating*
+
+Version 1 stores are readable and retain their named connections. Project
+mappings are ignored. The next storage update writes version 2. DBSetProject
+has been removed; use |:DBConnect| to select a connection for each file.
 
 Remove any old `source sql.vim` line from your vimrc. The old .dev.dburl,
 g:db, SetDBFile command, and global functions are not supported. Use |:DBNew|

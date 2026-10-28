@@ -1,4 +1,4 @@
-let s:store_version = 1
+let s:store_version = 2
 let s:jobs = []
 
 function! s:error(message) abort
@@ -9,7 +9,7 @@ function! s:error(message) abort
 endfunction
 
 function! s:empty_store() abort
-  return {'version': s:store_version, 'connections': {}, 'projects': {}}
+  return {'version': s:store_version, 'connections': {}, 'files': {}}
 endfunction
 
 function! s:store_path() abort
@@ -27,30 +27,35 @@ function! s:validate_store(store) abort
     throw 'the top-level value is not an object'
   endif
   if type(get(a:store, 'version', 0)) != v:t_number
-        \ || a:store.version != s:store_version
+        \ || index([1, s:store_version], a:store.version) < 0
     throw 'unsupported or missing version'
   endif
   if type(get(a:store, 'connections', 0)) != v:t_dict
     throw '"connections" must be an object'
   endif
-  if type(get(a:store, 'projects', 0)) != v:t_dict
-    throw '"projects" must be an object'
+  let mapping_key = a:store.version == 1 ? 'projects' : 'files'
+  if type(get(a:store, mapping_key, 0)) != v:t_dict
+    throw '"' . mapping_key . '" must be an object'
   endif
   for [name, url] in items(a:store.connections)
     if empty(trim(name)) || !s:valid_url(url)
       throw 'connection "' . name . '" is invalid'
     endif
   endfor
-  for [root, name] in items(a:store.projects)
-    if empty(root) || type(name) != v:t_string || empty(name)
-      throw 'project mapping "' . root . '" is invalid'
+  for [path, name] in items(a:store[mapping_key])
+    if empty(path) || type(name) != v:t_string || empty(name)
+      throw 'path mapping "' . path . '" is invalid'
     endif
-    let normalized = fnamemodify(root, ':p')
+    let normalized = fnamemodify(path, ':p')
     let normalized = normalized ==# '/' ? '/' : substitute(normalized, '/\+$', '', '')
-    if normalized !=# root
-      throw 'project root "' . root . '" must be a normalized absolute path'
+    if normalized !=# path
+      throw 'path "' . path . '" must be a normalized absolute path'
     endif
   endfor
+  if a:store.version == 1
+    " Keep named connections, but never inherit a legacy project default.
+    return {'version': s:store_version, 'connections': a:store.connections, 'files': {}}
+  endif
   return a:store
 endfunction
 
@@ -119,42 +124,21 @@ function! s:write_store(store) abort
   return 1
 endfunction
 
-function! s:canonical_directory(path) abort
-  let path = empty(a:path) ? getcwd() : a:path
-  let absolute = fnamemodify(path, ':p')
-  if !isdirectory(absolute)
-    throw 'not a directory: ' . a:path
+function! s:canonical_filepath(buffer) abort
+  if empty(bufname(a:buffer)) || !empty(getbufvar(a:buffer, '&buftype'))
+    return ''
   endif
-  let canonical = resolve(absolute)
-  return canonical ==# '/' ? '/' : substitute(canonical, '/\+$', '', '')
+  let absolute = fnamemodify(bufname(a:buffer), ':p')
+  return resolve(absolute)
 endfunction
 
-function! s:canonical_file_directory(buffer) abort
-  let name = bufname(a:buffer)
-  if empty(name)
-    return s:canonical_directory(getcwd())
+function! s:remember_connection(store, buffer, name) abort
+  let path = s:canonical_filepath(a:buffer)
+  if empty(path) || get(a:store.files, path, '') ==# a:name
+    return 1
   endif
-  let absolute = fnamemodify(name, ':p')
-  if !empty(getftype(absolute))
-    return s:canonical_directory(fnamemodify(resolve(absolute), ':h'))
-  endif
-  " Resolving the parent also handles a new file below a symlinked directory.
-  return s:canonical_directory(fnamemodify(absolute, ':h'))
-endfunction
-
-function! s:mapping_for_directory(projects, directory) abort
-  let current = a:directory
-  while 1
-    if has_key(a:projects, current)
-      return [current, a:projects[current]]
-    endif
-    let parent = fnamemodify(current, ':h')
-    if parent ==# current
-      break
-    endif
-    let current = parent
-  endwhile
-  return []
+  let a:store.files[path] = a:name
+  return s:write_store(a:store)
 endfunction
 
 function! s:warm_dadbod_completion(buffer, url) abort
@@ -180,9 +164,8 @@ function! s:warm_dadbod_completion(buffer, url) abort
   return 1
 endfunction
 
-function! s:activate_buffer(buffer, name, url, explicit) abort
+function! s:activate_buffer(buffer, name, url) abort
   call setbufvar(a:buffer, 'pgquery_connection', a:name)
-  call setbufvar(a:buffer, 'pgquery_connection_explicit', a:explicit)
   " vim-dadbod and vim-dadbod-completion discover buffer connections here.
   call setbufvar(a:buffer, 'db', a:url)
   call setbufvar(a:buffer, 'pgquery_dadbod_url', a:url)
@@ -201,7 +184,6 @@ function! s:disconnect_buffer(buffer) abort
       unlet! b:db
     endif
     unlet! b:pgquery_connection
-    unlet! b:pgquery_connection_explicit
     unlet! b:pgquery_dadbod_url
     unlet! b:pgquery_dadbod_completion_url
   else
@@ -212,7 +194,6 @@ function! s:disconnect_buffer(buffer) abort
       call setbufvar(a:buffer, 'db', '')
     endif
     call setbufvar(a:buffer, 'pgquery_connection', v:null)
-    call setbufvar(a:buffer, 'pgquery_connection_explicit', 0)
     call setbufvar(a:buffer, 'pgquery_dadbod_url', v:null)
     call setbufvar(a:buffer, 'pgquery_dadbod_completion_url', v:null)
   endif
@@ -251,18 +232,16 @@ function! pgquery#new(name, url) abort
   if has_key(store.connections, name)
     return s:error('connection "' . name . '" already exists; use :DBEdit to change it')
   endif
-  try
-    let root = s:canonical_directory(getcwd())
-  catch
-    return s:error(v:exception)
-  endtry
   let store.connections[name] = a:url
-  let store.projects[root] = name
+  let path = s:canonical_filepath(bufnr('%'))
+  if !empty(path)
+    let store.files[path] = name
+  endif
   if !s:write_store(store)
     return 0
   endif
-  call s:activate_buffer(bufnr('%'), name, a:url, 1)
-  echomsg 'pgquery: saved "' . name . '" and mapped ' . root
+  call s:activate_buffer(bufnr('%'), name, a:url)
+  echomsg 'pgquery: saved and selected "' . name . '"'
   return 1
 endfunction
 
@@ -321,9 +300,9 @@ function! pgquery#edit(name, ...) abort
 
   if new_name !=# a:name
     call remove(store.connections, a:name)
-    for root in keys(store.projects)
-      if store.projects[root] ==# a:name
-        let store.projects[root] = new_name
+    for path in keys(store.files)
+      if store.files[path] ==# a:name
+        let store.files[path] = new_name
       endif
     endfor
   endif
@@ -404,9 +383,9 @@ function! pgquery#delete(name) abort
 
   call remove(store.connections, a:name)
   let removed_mappings = 0
-  for root in keys(store.projects)
-    if store.projects[root] ==# a:name
-      call remove(store.projects, root)
+  for path in keys(store.files)
+    if store.files[path] ==# a:name
+      call remove(store.files, path)
       let removed_mappings += 1
     endif
   endfor
@@ -421,7 +400,7 @@ function! pgquery#delete(name) abort
     endif
   endfor
   echomsg 'pgquery: deleted connection "' . a:name . '" and removed '
-        \ . removed_mappings . ' project mapping' . (removed_mappings == 1 ? '' : 's')
+        \ . removed_mappings . ' file mapping' . (removed_mappings == 1 ? '' : 's')
   return 1
 endfunction
 
@@ -433,9 +412,9 @@ function! s:delete_named_prompt(name) abort
   if !has_key(store.connections, a:name)
     return s:error('connection "' . a:name . '" does not exist')
   endif
-  let mappings = count(values(store.projects), a:name)
+  let mappings = count(values(store.files), a:name)
   let message = 'Delete connection "' . a:name . '"? This also removes '
-        \ . mappings . ' project mapping' . (mappings == 1 ? '' : 's') . '.'
+        \ . mappings . ' file mapping' . (mappings == 1 ? '' : 's') . '.'
   if confirm(message, "&Delete\n&Cancel", 2) != 1
     return 0
   endif
@@ -526,7 +505,10 @@ function! s:select_connection(buffer, name) abort
     call s:disconnect_buffer(a:buffer)
     return s:error('connection "' . a:name . '" no longer exists')
   endif
-  call s:activate_buffer(a:buffer, a:name, store.connections[a:name], 1)
+  if !s:remember_connection(store, a:buffer, a:name)
+    return 0
+  endif
+  call s:activate_buffer(a:buffer, a:name, store.connections[a:name])
   echomsg 'pgquery: buffer connected to "' . a:name . '"'
   return 1
 endfunction
@@ -562,38 +544,15 @@ function! pgquery#connect() abort
   return s:select_connection(target, names[choice - 1])
 endfunction
 
-function! pgquery#set_project(path) abort
-  if !exists('b:pgquery_connection') || type(b:pgquery_connection) != v:t_string || empty(b:pgquery_connection)
-    return s:error('this buffer has no selected connection; use :DBConnect or :DBNew first')
-  endif
-  let store = s:read_store(0)
-  if store is v:null
-    return 0
-  endif
-  if !has_key(store.connections, b:pgquery_connection)
-    call s:disconnect_buffer(bufnr('%'))
-    return s:error('the selected connection is missing from storage; select another with :DBConnect')
-  endif
-  try
-    let root = s:canonical_directory(a:path)
-  catch
-    return s:error(v:exception)
-  endtry
-  let store.projects[root] = b:pgquery_connection
-  if !s:write_store(store)
-    return 0
-  endif
-  echomsg 'pgquery: mapped ' . root . ' to "' . b:pgquery_connection . '"'
-  return 1
-endfunction
-
 function! pgquery#select_for_buffer() abort
-  if expand('%:e') !=# 'sql'
+  let filepath = s:canonical_filepath(bufnr('%'))
+  if empty(filepath)
     return 0
   endif
   let path = s:store_path()
   if !filereadable(path)
     if empty(getftype(path))
+      call s:disconnect_buffer(bufnr('%'))
       return 0
     endif
   endif
@@ -602,26 +561,16 @@ function! pgquery#select_for_buffer() abort
     call s:disconnect_buffer(bufnr('%'))
     return 0
   endif
-  try
-    let directory = s:canonical_file_directory(bufnr('%'))
-  catch
+  let name = get(store.files, filepath, '')
+  if empty(name)
     call s:disconnect_buffer(bufnr('%'))
-    return s:error(v:exception)
-  endtry
-  let mapping = s:mapping_for_directory(store.projects, directory)
-  if empty(mapping)
-    " Only an explicit buffer-local selection remains valid when unmapped.
-    if !get(b:, 'pgquery_connection_explicit', 0)
-      call s:disconnect_buffer(bufnr('%'))
-    endif
     return 0
   endif
-  let name = mapping[1]
   if !has_key(store.connections, name)
     call s:disconnect_buffer(bufnr('%'))
-    return s:error('project ' . mapping[0] . ' refers to missing connection "' . name . '"; fix the protected store')
+    return s:error('file ' . filepath . ' refers to missing connection "' . name . '"; fix the protected store')
   endif
-  call s:activate_buffer(bufnr('%'), name, store.connections[name], 0)
+  call s:activate_buffer(bufnr('%'), name, store.connections[name])
   return 1
 endfunction
 
@@ -639,6 +588,9 @@ function! s:active_connection() abort
     let missing = b:pgquery_connection
     call s:disconnect_buffer(bufnr('%'))
     call s:error('connection "' . missing . '" is missing from storage; the buffer was disconnected')
+    return v:null
+  endif
+  if !s:remember_connection(store, bufnr('%'), b:pgquery_connection)
     return v:null
   endif
   return {'name': b:pgquery_connection, 'url': store.connections[b:pgquery_connection]}

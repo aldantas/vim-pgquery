@@ -14,8 +14,10 @@ try
   call assert_equal(2, exists(':DBShowURL'))
   call assert_equal(2, exists(':DBEdit'))
   call assert_equal(2, exists(':DBDelete'))
+  call assert_equal(0, exists(':DBSetProject'))
   execute 'cd ' . fnameescape(s:project)
 
+  execute 'edit ' . fnameescape(s:project . '/first.sql')
   let s:first_buffer = bufnr('%')
   call assert_equal('', pgquery#statusline())
   call assert_equal(1, pgquery#new('local', 'postgresql://user@localhost/one'))
@@ -36,11 +38,16 @@ try
 
   execute 'edit ' . fnameescape(s:project . '/mapped.sql')
   let s:mapped_buffer = bufnr('%')
+  call assert_equal('', pgquery#statusline())
+  call pgquery#connect()
+  call popup_close(popup_list()[0], 1)
   call assert_equal('local', b:pgquery_connection)
   call assert_equal(' [DB: local]', pgquery#statusline())
 
   execute 'split ' . fnameescape(s:project . '/overridden.sql')
   let s:overridden_buffer = bufnr('%')
+  call pgquery#connect()
+  call popup_close(popup_list()[0], 1)
   let b:db = 'postgresql://other-plugin@localhost/override'
   call assert_equal('postgresql://user@localhost/one',
         \ trim(execute('DBShowURL')))
@@ -58,7 +65,7 @@ try
   call assert_false(has_key(s:store.connections, 'local'))
   call assert_equal('postgresql://user@localhost/two',
         \ s:store.connections.renamed)
-  call assert_equal('renamed', s:store.projects[s:project])
+  call assert_equal('renamed', s:store.files[s:project . '/mapped.sql'])
   call assert_equal('renamed',
         \ getbufvar(s:first_buffer, 'pgquery_connection'))
   call assert_equal('renamed',
@@ -73,7 +80,7 @@ try
   call assert_equal(1, pgquery#delete('renamed'))
   let s:store = json_decode(join(readfile(g:pgquery_store_path), "\n"))
   call assert_equal({}, s:store.connections)
-  call assert_equal({}, s:store.projects)
+  call assert_equal({}, s:store.files)
   call assert_equal(v:null,
         \ getbufvar(s:first_buffer, 'pgquery_connection', v:null))
   call assert_equal(v:null,

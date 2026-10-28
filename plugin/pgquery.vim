@@ -14,13 +14,12 @@ command! -nargs=? -complete=customlist,pgquery#complete_connections DBEdit
       \ call pgquery#edit_prompt(<q-args>)
 command! -nargs=? -complete=customlist,pgquery#complete_connections DBDelete
       \ call pgquery#delete_prompt(<q-args>)
-command! -nargs=? -complete=dir DBSetProject call pgquery#set_project(<q-args>)
 command! -nargs=0 -range DBExecute
       \ call pgquery#execute(<range>, <line1>, <line2>)
 command! -nargs=0 DBTerminal call pgquery#terminal()
 
 augroup pgquery
   autocmd!
-  autocmd BufReadPost,BufNewFile,BufEnter *.sql call pgquery#select_for_buffer()
+  autocmd BufReadPost,BufNewFile,BufEnter * call pgquery#select_for_buffer()
   autocmd VimLeavePre * call pgquery#cleanup()
 augroup END

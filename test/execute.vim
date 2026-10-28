@@ -22,6 +22,7 @@ try
   let g:pgquery_store_path = s:test_directory . '/pgquery.json'
   call writefile([
         \ '#!/bin/sh',
+        \ 'printf "%s\n" "$1" >> "$PGQUERY_TEST_URLS"',
         \ 'while [ "$#" -gt 0 ]; do',
         \ '  if [ "$1" = "-f" ]; then',
         \ '    shift',
@@ -33,14 +34,19 @@ try
         \ 'exit 2'], s:bin_directory . '/psql')
   call setfperm(s:bin_directory . '/psql', 'rwx------')
   let $PATH = s:bin_directory . ':' . $PATH
+  let $PGQUERY_TEST_URLS = s:test_directory . '/urls'
 
   execute 'set runtimepath^=' . fnameescape(s:plugin_directory)
   runtime plugin/pgquery.vim
   execute 'cd ' . fnameescape(s:project)
+  silent execute 'file ' . fnameescape(s:project . '/queries.sql')
   call assert_equal(1,
         \ pgquery#new('local', 'postgresql://user@localhost/database'))
 
   silent execute 'file ' . fnameescape(s:project . '/queries.sql')
+  call assert_equal(1, pgquery#new('other', 'postgresql://user@localhost/other'))
+  call pgquery#connect()
+  call popup_close(popup_list()[0], 1)
   let s:source_buffer = bufnr('%')
   let s:initial_window_count = winnr('$')
   call setline(1, [
@@ -79,6 +85,7 @@ try
   let s:window_count = winnr('$')
   wincmd p
   call assert_equal(s:source_buffer, bufnr('%'))
+  call assert_equal('local', b:pgquery_connection)
   call cursor(5, 1)
   DBExecute
   call assert_true(s:wait_for_result(), 'cursor-block query did not finish')
@@ -90,6 +97,8 @@ try
   call assert_equal([
         \ "select 'selected two';",
         \ "select 'selected three';"], getline(1, '$'))
+  call assert_equal(repeat(['postgresql://user@localhost/database'], 2),
+        \ readfile($PGQUERY_TEST_URLS))
 finally
   let $PATH = s:original_path
   execute 'cd ' . fnameescape(s:original_directory)
