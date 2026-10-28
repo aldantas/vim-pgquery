@@ -1,5 +1,6 @@
-let s:store_version = 2
 let s:jobs = []
+let s:transactions = {}
+let s:sequence = 0
 
 function! s:error(message) abort
   echohl ErrorMsg
@@ -9,7 +10,7 @@ function! s:error(message) abort
 endfunction
 
 function! s:empty_store() abort
-  return {'version': s:store_version, 'connections': {}, 'files': {}}
+  return {'connections': {}, 'files': {}}
 endfunction
 
 function! s:store_path() abort
@@ -26,23 +27,19 @@ function! s:validate_store(store) abort
   if type(a:store) != v:t_dict
     throw 'the top-level value is not an object'
   endif
-  if type(get(a:store, 'version', 0)) != v:t_number
-        \ || index([1, s:store_version], a:store.version) < 0
-    throw 'unsupported or missing version'
-  endif
   if type(get(a:store, 'connections', 0)) != v:t_dict
     throw '"connections" must be an object'
   endif
-  let mapping_key = a:store.version == 1 ? 'projects' : 'files'
-  if type(get(a:store, mapping_key, 0)) != v:t_dict
-    throw '"' . mapping_key . '" must be an object'
+  let files = get(a:store, 'files', {})
+  if type(files) != v:t_dict
+    throw '"files" must be an object'
   endif
   for [name, url] in items(a:store.connections)
     if empty(trim(name)) || !s:valid_url(url)
       throw 'connection "' . name . '" is invalid'
     endif
   endfor
-  for [path, name] in items(a:store[mapping_key])
+  for [path, name] in items(files)
     if empty(path) || type(name) != v:t_string || empty(name)
       throw 'path mapping "' . path . '" is invalid'
     endif
@@ -52,11 +49,7 @@ function! s:validate_store(store) abort
       throw 'path "' . path . '" must be a normalized absolute path'
     endif
   endfor
-  if a:store.version == 1
-    " Keep named connections, but never inherit a legacy project default.
-    return {'version': s:store_version, 'connections': a:store.connections, 'files': {}}
-  endif
-  return a:store
+  return {'connections': a:store.connections, 'files': files}
 endfunction
 
 function! s:read_store(allow_missing) abort
@@ -174,6 +167,7 @@ function! s:activate_buffer(buffer, name, url) abort
 endfunction
 
 function! s:disconnect_buffer(buffer) abort
+  call s:close_transaction(a:buffer)
   let managed_url = getbufvar(a:buffer, 'pgquery_dadbod_url', v:null)
   let current_url = getbufvar(a:buffer, 'db', v:null)
 
@@ -213,10 +207,13 @@ function! pgquery#statusline() abort
   if type(name) != v:t_string || empty(name)
     return ''
   endif
-  return ' [DB: ' . name . ']'
+  return ' [DB: ' . name . (has_key(s:transactions, bufnr('%')) ? '; TX' : '') . ']'
 endfunction
 
 function! pgquery#new(name, url) abort
+  if has_key(s:transactions, bufnr('%'))
+    return s:error('cannot create and select a connection during a transaction')
+  endif
   let name = trim(a:name)
   if empty(name)
     return s:error('connection name must not be empty')
@@ -271,6 +268,9 @@ endfunction
 
 " With two arguments, change only the URL. A third argument also renames it.
 function! pgquery#edit(name, ...) abort
+  if s:connection_in_transaction(a:name)
+    return s:error('connection is used by an open transaction; commit or roll back first')
+  endif
   if a:0 == 1
     let new_name = trim(a:name)
     let url = a:1
@@ -318,6 +318,9 @@ function! pgquery#edit(name, ...) abort
 endfunction
 
 function! s:edit_named_prompt(name) abort
+  if s:connection_in_transaction(a:name)
+    return s:error('connection is used by an open transaction; commit or roll back first')
+  endif
   let store = s:read_store(0)
   if store is v:null
     return 0
@@ -331,7 +334,7 @@ function! s:edit_named_prompt(name) abort
   if empty(new_name)
     return 0
   endif
-  let url = inputsecret('New PostgreSQL URL (leave blank to keep current): ')
+  let url = input('New PostgreSQL URL (leave blank to keep current): ')
   if empty(url)
     let url = store.connections[a:name]
   endif
@@ -373,6 +376,9 @@ function! pgquery#edit_prompt(...) abort
 endfunction
 
 function! pgquery#delete(name) abort
+  if s:connection_in_transaction(a:name)
+    return s:error('connection is used by an open transaction; commit or roll back first')
+  endif
   let store = s:read_store(0)
   if store is v:null
     return 0
@@ -405,6 +411,9 @@ function! pgquery#delete(name) abort
 endfunction
 
 function! s:delete_named_prompt(name) abort
+  if s:connection_in_transaction(a:name)
+    return s:error('connection is used by an open transaction; commit or roll back first')
+  endif
   let store = s:read_store(0)
   if store is v:null
     return 0
@@ -456,13 +465,16 @@ function! pgquery#delete_prompt(...) abort
 endfunction
 
 function! pgquery#new_prompt() abort
+  if has_key(s:transactions, bufnr('%'))
+    return s:error('cannot create and select a connection during a transaction')
+  endif
   call inputsave()
   try
     let name = input('Connection name: ')
     if empty(name)
       return 0
     endif
-    let url = inputsecret('PostgreSQL URL: ')
+    let url = input('PostgreSQL URL: ')
   finally
     call inputrestore()
   endtry
@@ -497,6 +509,12 @@ function! pgquery#complete_connections(lead, command_line, cursor_position) abor
 endfunction
 
 function! s:select_connection(buffer, name) abort
+  if has_key(s:transactions, a:buffer)
+    if s:transactions[a:buffer].name ==# a:name
+      return 1
+    endif
+    return s:error('cannot change connection during a transaction')
+  endif
   let store = s:read_store(0)
   if store is v:null
     return 0
@@ -545,6 +563,9 @@ function! pgquery#connect() abort
 endfunction
 
 function! pgquery#select_for_buffer() abort
+  if has_key(s:transactions, bufnr('%'))
+    return 1
+  endif
   let filepath = s:canonical_filepath(bufnr('%'))
   if empty(filepath)
     return 0
@@ -575,6 +596,9 @@ function! pgquery#select_for_buffer() abort
 endfunction
 
 function! s:active_connection() abort
+  if has_key(s:transactions, bufnr('%'))
+    return s:transactions[bufnr('%')]
+  endif
   if !exists('b:pgquery_connection') || type(b:pgquery_connection) != v:t_string || empty(b:pgquery_connection)
     call s:error('this buffer is disconnected; use :DBConnect or :DBNew')
     return v:null
@@ -681,7 +705,183 @@ function! s:on_job_exit(state, job, status) abort
   endif
 endfunction
 
+" Scan controls and destructive keywords outside SQL quotes and comments.
+" State is local to one execution: complete SQL blocks are the input contract.
+function! s:sql_state(sql, initially_open) abort
+  let open = a:initially_open
+  let destructive = 0
+  let unprotected = 0
+  let quote = ''
+  let escape = 0
+  let comment = 0
+  for line in a:sql
+    if empty(quote) && comment == 0 && line =~? '^\s*\%(BEGIN\|COMMIT\|ROLLBACK\);\s*$'
+      let open = line =~? '^\s*BEGIN;'
+    endif
+    let i = 0
+    while i < strlen(line)
+      let c = strpart(line, i, 1)
+      let pair = strpart(line, i, 2)
+      if comment > 0
+        if pair ==# '/*'
+          let comment += 1
+          let i += 2
+        elseif pair ==# '*/'
+          let comment -= 1
+          let i += 2
+        else
+          let i += 1
+        endif
+      elseif !empty(quote)
+        if strpart(line, i, strlen(quote)) ==# quote
+          if (quote ==# "'" || quote ==# '"') && strpart(line, i + 1, 1) ==# quote
+            let i += 2
+          else
+            let i += strlen(quote)
+            let quote = ''
+          endif
+        elseif escape && quote ==# "'" && c ==# "\\"
+          let i += 2
+        else
+          let i += 1
+        endif
+      elseif pair ==# '--'
+        break
+      elseif pair ==# '/*'
+        let comment = 1
+        let i += 2
+      elseif c ==# "'" || c ==# '"'
+        let quote = c
+        let escape = i > 0 && strpart(line, i - 1, 1) =~? 'e'
+              \ && (i < 2 || strpart(line, i - 2, 1) !~# '[A-Za-z_0-9$]')
+        let i += 1
+      elseif c ==# '$' && (i == 0 || strpart(line, i - 1, 1) !~# '[A-Za-z_0-9$]')
+        let tag = matchstr(strpart(line, i), '^\$\%([A-Za-z_][A-Za-z_0-9]*\)\?\$')
+        let quote = tag
+        let i += max([1, strlen(tag)])
+      elseif c =~# '[A-Za-z_0-9$\x80-\xff]'
+        let word = matchstr(strpart(line, i), '^[A-Za-z_0-9$\x80-\xff]\+')
+        if word =~? '^\%(DELETE\|TRUNCATE\)$'
+          let destructive = 1
+          let unprotected = unprotected || !open
+        endif
+        let i += strlen(word)
+      else
+        let i += 1
+      endif
+    endwhile
+  endfor
+  return {'open': open, 'destructive': destructive, 'unprotected': unprotected}
+endfunction
+
+function! s:connection_in_transaction(name) abort
+  for state in values(s:transactions)
+    if state.name ==# a:name
+      return 1
+    endif
+  endfor
+  return 0
+endfunction
+
+function! s:close_transaction(buffer) abort
+  if !has_key(s:transactions, a:buffer)
+    return
+  endif
+  let state = remove(s:transactions, a:buffer)
+  if !empty(state.temporary)
+    call delete(state.temporary)
+  endif
+  if has_key(state, 'job') && job_status(state.job) ==# 'run'
+    call job_stop(state.job)
+  endif
+  redrawstatus!
+endfunction
+
+function! pgquery#cleanup_buffer(buffer) abort
+  call s:close_transaction(a:buffer)
+endfunction
+
+function! s:on_transaction_closed(state, channel) abort
+  if !has_key(s:transactions, a:state.buffer)
+        \ || s:transactions[a:state.buffer] isnot a:state
+    return
+  endif
+  call remove(s:transactions, a:state.buffer)
+  if !empty(a:state.temporary)
+    call delete(a:state.temporary)
+  endif
+  if a:state.busy
+    call s:show_job_result(a:state, get(job_info(a:state.job), 'exitval', -1))
+  endif
+  redrawstatus!
+  call s:error('transaction psql terminated unexpectedly; transaction state cleared (queries were not retried)')
+endfunction
+
+function! s:on_transaction_output(state, channel, message) abort
+  if !has_key(s:transactions, a:state.buffer)
+        \ || s:transactions[a:state.buffer] isnot a:state || !a:state.busy
+    return
+  endif
+  if a:message !=# a:state.marker
+    call add(a:state.output, a:message)
+    return
+  endif
+  call delete(a:state.temporary)
+  let a:state.temporary = ''
+  let a:state.busy = 0
+  if !a:state.open
+    call remove(s:transactions, a:state.buffer)
+    call ch_sendraw(a:channel, "\\q\n")
+    call ch_close_in(a:channel)
+  endif
+  redrawstatus!
+  call s:show_job_result(a:state, 0)
+endfunction
+
+function! s:execute_transaction(buffer, connection, sql, temporary) abort
+  if !has_key(s:transactions, a:buffer)
+    let state = {'buffer': a:buffer, 'name': a:connection.name,
+          \ 'url': a:connection.url, 'temporary': a:temporary, 'busy': 0}
+    let s:transactions[a:buffer] = state
+    try
+      let state.job = job_start(['psql', state.url, '-X', '-w',
+            \ '-P', 'pager=off', '-v', 'ON_ERROR_STOP=off',
+            \ '-v', 'ON_ERROR_ROLLBACK=off'], {
+            \ 'in_io': 'pipe', 'out_mode': 'nl', 'err_io': 'out',
+            \ 'out_cb': function('s:on_transaction_output', [state]),
+            \ 'close_cb': function('s:on_transaction_closed', [state])})
+      if job_status(state.job) ==# 'fail'
+        throw 'make sure psql is installed and in PATH'
+      endif
+    catch
+      call s:close_transaction(a:buffer)
+      return s:error('could not start transaction psql: ' . v:exception)
+    endtry
+  else
+    let state = s:transactions[a:buffer]
+  endif
+  let s:sequence += 1
+  let state.marker = '__pgquery_' . getpid() . '_' . s:sequence . '_' . substitute(reltimestr(reltime()), '\W', '', 'g') . '__'
+  let state.output = []
+  let state.temporary = a:temporary
+  let state.open = s:sql_state(a:sql, 1).open
+  let state.busy = 1
+  try
+    " psql meta-command arguments use single quotes and backslash escapes.
+    let path = substitute(a:temporary, '[\\'']', '\\&', 'g')
+    call ch_sendraw(job_getchannel(state.job), "\\i '" . path . "'\n\\echo " . state.marker . "\n")
+  catch
+    call s:close_transaction(a:buffer)
+    return s:error('could not send SQL to transaction psql: ' . v:exception)
+  endtry
+  redrawstatus!
+  return 1
+endfunction
+
 function! pgquery#execute(...) abort
+  if has_key(s:transactions, bufnr('%')) && s:transactions[bufnr('%')].busy
+    return s:error('transaction query is still running in this buffer')
+  endif
   if !has('job') || !exists('*job_start')
     return s:error(':DBExecute requires Vim compiled with +job')
   endif
@@ -700,6 +900,16 @@ function! pgquery#execute(...) abort
       return s:error('no nonblank SQL block under the cursor')
     endif
   endif
+  if get(g:, 'pgquery_confirm_destructive', 1)
+    let in_transaction = has_key(s:transactions, bufnr('%'))
+    let sql_state = s:sql_state(sql, in_transaction)
+    if (in_transaction ? sql_state.unprotected : sql_state.destructive)
+          \ && confirm('pgquery: DELETE or TRUNCATE outside a live transaction on "'
+          \ . connection.name . '". Changes may be permanent. Execute?',
+          \ "&Execute\n&Cancel", 2, 'Warning') != 1
+      return 0
+    endif
+  endif
   let temporary = tempname() . '.sql'
   try
     call writefile(sql, temporary)
@@ -710,6 +920,9 @@ function! pgquery#execute(...) abort
     call delete(temporary)
     return s:error('cannot create temporary SQL file: ' . v:exception)
   endtry
+  if has_key(s:transactions, bufnr('%')) || sql[0] =~? '^\s*BEGIN;\s*$'
+    return s:execute_transaction(bufnr('%'), connection, sql, temporary)
+  endif
   let state = {'name': connection.name, 'temporary': temporary, 'output': []}
   call add(s:jobs, state)
   let command = ['psql', connection.url, '-f', temporary]
@@ -733,6 +946,9 @@ function! pgquery#execute(...) abort
 endfunction
 
 function! pgquery#cleanup() abort
+  for buffer in keys(s:transactions)
+    call s:close_transaction(buffer)
+  endfor
   for state in s:jobs
     if !empty(state.temporary)
       call delete(state.temporary)

@@ -27,11 +27,22 @@ try
   call s:choose(2)
   call assert_equal('beta', b:pgquery_connection)
   let s:store = json_decode(join(readfile(g:pgquery_store_path)))
-  call assert_equal(2, s:store.version)
+  call assert_false(has_key(s:store, 'version'))
   call assert_equal(s:legacy.connections, s:store.connections)
   call assert_false(has_key(s:store, 'projects'))
   call assert_equal({s:test_directory . '/one.sql': 'beta'}, s:store.files)
   call assert_equal('rw-------', getfperm(g:pgquery_store_path))
+
+  " A leftover version field is ignored; file mappings are preserved.
+  let s:store.version = 'unused'
+  call writefile([json_encode(s:store)], g:pgquery_store_path)
+  call assert_equal(1, pgquery#select_for_buffer())
+  call assert_equal('beta', b:pgquery_connection)
+  call assert_equal(1, pgquery#edit('alpha', 'postgresql://localhost/alpha'))
+  let s:updated = json_decode(join(readfile(g:pgquery_store_path)))
+  call assert_false(has_key(s:updated, 'version'))
+  call assert_equal(s:store.files, s:updated.files)
+  call assert_equal(s:store.connections, s:updated.connections)
 
   " A neighboring file does not inherit the first file's selection.
   execute 'edit ' . fnameescape(s:test_directory . '/two.sql')
@@ -76,7 +87,7 @@ try
   call assert_equal(0, pgquery#select_for_buffer())
   call assert_equal('', pgquery#statusline())
   call assert_match('missing connection', execute('messages'))
-  call writefile(['{"version":2,"connections":{},"files":[]}'], g:pgquery_store_path)
+  call writefile(['{"connections":{},"files":[]}'], g:pgquery_store_path)
   let s:invalid = readfile(g:pgquery_store_path)
   call assert_equal(0, pgquery#new('new', 'postgresql://localhost/new'))
   call assert_equal(s:invalid, readfile(g:pgquery_store_path))

@@ -23,7 +23,7 @@ vim -u NONE -c 'helptags ~/.vim/pack/plugins/start/vim-pgquery/doc' -c quit
 
 ## Commands
 
-- `:DBNew` prompts for a unique friendly name and then, with hidden input, a
+- `:DBNew` prompts for a unique friendly name and then a visibly editable
   `postgres://` or `postgresql://` URL. It saves and selects the connection for
   the current buffer, and remembers it for the file path.
 - `:DBConnect` selects and remembers a saved connection for the current file.
@@ -31,7 +31,7 @@ vim -u NONE -c 'helptags ~/.vim/pack/plugins/start/vim-pgquery/doc' -c quit
   shows `name — user@host:port/database`, never the password or URL parameters.
 - `:DBCurrent` displays the current buffer's full saved connection URL. This
   includes credentials and URL parameters when present.
-- `:DBEdit [name]` changes a connection's name and URL. When no name is given,
+- `:DBEdit [name]` changes a connection's name and URL using visible input. When no name is given,
   it presents the saved-connection picker; leave the URL prompt blank to keep
   the existing URL. Renames update file mappings, and all loaded buffers
   using the connection are refreshed.
@@ -53,6 +53,51 @@ nnoremap <silent> <leader>dq :DBExecute<CR>
 xnoremap <silent> <leader>dq :DBExecute<CR>
 nnoremap <silent> <leader>dt :DBTerminal<CR>
 ```
+
+Before running SQL containing `DELETE` or `TRUNCATE` outside a live transaction
+in the current buffer, `:DBExecute` shows a warning and asks for confirmation.
+Cancel is the default and sends no SQL. Detection is case-insensitive and
+ignores comments, strings, and quoted identifiers. Only the block or range
+being executed is checked. A block starting a new transaction still asks for
+confirmation; subsequent executions inside that transaction do not. SQL after
+a standalone `COMMIT;` or `ROLLBACK;` is checked again, even in the same block.
+This follows the transaction tracking rules below, rather than parsing all SQL
+or psql commands. To disable the warning, add this to your vimrc:
+
+```vim
+let g:pgquery_confirm_destructive = 0
+```
+
+## Transactions across executions
+
+Execute a block whose first line is `BEGIN;` (case and surrounding whitespace
+are ignored), then execute subsequent SQL blocks with `:DBExecute`. They share
+one `psql` process owned by that source buffer until you execute `COMMIT;` or
+`ROLLBACK;`. The statusline shows ` [DB: name; TX]` while the session exists.
+Other buffers have independent sessions, even when they select the same
+connection. `:DBTerminal` always owns a separate session.
+
+Transaction controls must be standalone lines: `BEGIN;`, `COMMIT;`, or
+`ROLLBACK;`. Controls in SQL strings, quoted identifiers, dollar-quoted strings,
+and comments are ignored. Multiple controls in an execution are tracked in
+order; statements following a closing control in that execution still run
+normally. Inline controls, aliases such as `END`, transaction options, and
+`AND CHAIN` are outside this tracking contract. Execute complete SQL blocks.
+
+Each execution displays its own results and removes its temporary SQL file
+when complete. Another execution from the same buffer is rejected while one
+is running. SQL errors keep the session alive, including PostgreSQL's normal
+failed-transaction state: execute `ROLLBACK;` to recover. Unexpected process
+termination clears the session and is reported; queries are never retried.
+
+During a transaction you cannot select a different connection or use `:DBNew`
+in its buffer. A connection used by any open transaction cannot be edited or
+deleted. Transaction jobs ignore psql startup files, disable paging, and keep
+`ON_ERROR_STOP` and `ON_ERROR_ROLLBACK` off.
+
+Switching or hiding the source buffer preserves the session. Deleting or
+wiping the source buffer, disconnecting it, or exiting Vim closes the process
+and discards any open transaction. Transaction state is kept only in memory.
 
 ## File connections and buffer isolation
 
@@ -76,7 +121,7 @@ set statusline+=%{pgquery#statusline()}
 ```
 
 `pgquery#statusline()` displays `[DB: name]` for the current buffer and nothing
-when it is disconnected. It uses the saved connection name, even when that
+when it is disconnected; an open transaction adds `; TX` before `]`. It uses the saved connection name, even when that
 differs from the database in the URL. It updates when you switch buffers,
 rename a connection, or delete one. If you use Vim's default statusline, set
 a full format first, for example:
@@ -106,7 +151,7 @@ let g:pgquery_eager_dadbod_completion = 0
 
 ## Storage and credentials
 
-State is stored as versioned JSON at `~/.vim/pgquery.json`. Set a different
+State is stored as JSON at `~/.vim/pgquery.json`. Set a different
 location before the plugin loads if desired:
 
 ```vim
@@ -118,11 +163,8 @@ mode to `0600`. Malformed JSON or an invalid schema is never overwritten; Vim
 reports the path so you can fix or move it. `:DBEdit` and `:DBDelete` preserve
 that behavior when changing the store.
 
-Version 2 stores named connections and a `files` map from absolute file paths
-to connection names. Version 1 stores remain readable: saved connections are
-preserved, and obsolete project defaults are ignored. The next change writes
-the version 2 format. `:DBSetProject` has been removed; select a connection for
-each file with `:DBConnect`.
+The store contains named `connections` and a `files` map from absolute file
+paths to connection names.
 
 Database URLs, including any embedded passwords, are stored as plaintext.
 Mode `0600` restricts access to your Unix user, but processes running as you,

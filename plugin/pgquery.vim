@@ -21,5 +21,6 @@ command! -nargs=0 DBTerminal call pgquery#terminal()
 augroup pgquery
   autocmd!
   autocmd BufReadPost,BufNewFile,BufEnter * call pgquery#select_for_buffer()
+  autocmd BufDelete,BufWipeout * call pgquery#cleanup_buffer(str2nr(expand('<abuf>')))
   autocmd VimLeavePre * call pgquery#cleanup()
 augroup END

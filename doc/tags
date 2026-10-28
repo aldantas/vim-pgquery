@@ -5,6 +5,7 @@
 :DBExecute	pgquery.txt	/*:DBExecute*
 :DBNew	pgquery.txt	/*:DBNew*
 :DBTerminal	pgquery.txt	/*:DBTerminal*
+g:pgquery_confirm_destructive	pgquery.txt	/*g:pgquery_confirm_destructive*
 g:pgquery_eager_dadbod_completion	pgquery.txt	/*g:pgquery_eager_dadbod_completion*
 pgquery	pgquery.txt	/*pgquery*
 pgquery#statusline()	pgquery.txt	/*pgquery#statusline()*
@@ -12,8 +13,8 @@ pgquery-commands	pgquery.txt	/*pgquery-commands*
 pgquery-contents	pgquery.txt	/*pgquery-contents*
 pgquery-files	pgquery.txt	/*pgquery-files*
 pgquery-mappings	pgquery.txt	/*pgquery-mappings*
-pgquery-migrating	pgquery.txt	/*pgquery-migrating*
 pgquery-requirements	pgquery.txt	/*pgquery-requirements*
 pgquery-statusline	pgquery.txt	/*pgquery-statusline*
 pgquery-storage	pgquery.txt	/*pgquery-storage*
+pgquery-transactions	pgquery.txt	/*pgquery-transactions*
 pgquery.txt	pgquery.txt	/*pgquery.txt*

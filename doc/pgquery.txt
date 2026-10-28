@@ -10,7 +10,7 @@ CONTENTS                                                     *pgquery-contents*
   5. Statusline.........................|pgquery-statusline|
   6. Storage and security...............|pgquery-storage|
   7. Mappings...........................|pgquery-mappings|
-  8. Migrating..........................|pgquery-migrating|
+  8. Transactions......................|pgquery-transactions|
 
 ==============================================================================
 INTRODUCTION                                                       *pgquery*
@@ -34,7 +34,7 @@ COMMANDS                                                   *pgquery-commands*
 
                                                                *:DBNew*
 :DBNew          Prompt for a unique friendly name and a PostgreSQL URL. URL
-                input is hidden. The URL must start with postgres:// or
+                input is visible. The URL must start with postgres:// or
                 postgresql:// and contain no whitespace. The new connection
                 is selected for the current buffer and remembered for
                 its file path.
@@ -52,7 +52,8 @@ COMMANDS                                                   *pgquery-commands*
 
                                                             *:DBEdit*
 :DBEdit [name]  Change a saved connection's name and URL. If {name} is omitted,
-                choose one from the connection picker. Leave the URL prompt
+                choose one from the connection picker. URL input is visible.
+                Leave the URL prompt
                 blank to keep the current URL. Renaming also updates every
                 file mapping that refers to the old name. Loaded buffers
                 using the connection are updated immediately.
@@ -72,7 +73,23 @@ COMMANDS                                                   *pgquery-commands*
                 errors are accumulated independently for every job and shown
                 in a read-only scratch split. A nonzero psql exit status is
                 reported. The temporary SQL file is removed when the job
-                exits.
+                exits, or the transaction execution completes. See
+                |pgquery-transactions| for sessions spanning executions.
+
+                                        *g:pgquery_confirm_destructive*
+                DELETE and TRUNCATE outside a live transaction in the current
+                buffer require confirmation, with Cancel as the default.
+                Canceling returns without sending SQL. Only the executed
+                block or range is checked. Keywords are case-insensitive;
+                comments, strings, and quoted identifiers are ignored.
+                A block starting a new transaction also asks; subsequent
+                executions inside it do not. Destructive SQL after a tracked
+                COMMIT; or ROLLBACK; requires confirmation again, including
+                within the same execution. Detection follows the supported
+                transaction controls below, not a full SQL or psql parser.
+                The warning is enabled by default. Disable it with: >
+                  let g:pgquery_confirm_destructive = 0
+<
 
                                                         *:DBTerminal*
 :DBTerminal     Open psql with the current buffer's connection in a Vim
@@ -119,11 +136,48 @@ Append the selected connection name to an existing |'statusline'|: >
 pgquery#statusline() returns " [DB: name]" for the statusline's buffer, or an
 empty string when disconnected. It uses the saved connection name, even when
 that differs from the database in the URL. The value follows buffer changes,
-connection renames, and deletions without showing credentials.
+connection renames, and deletions without showing credentials. While a
+transaction session exists it returns " [DB: name; TX]".
 
 When using Vim's default statusline, set a complete format first: >
   set statusline=%f%m%r%=%{pgquery#statusline()}\ %l:%c
 <
+
+==============================================================================
+TRANSACTIONS                                            *pgquery-transactions*
+
+Start a transaction by executing a block whose first line is BEGIN;. Case and
+surrounding whitespace are ignored. Subsequent DBExecute calls in that source
+buffer use the same psql process and selected connection. Execute COMMIT; or
+ROLLBACK; to end the transaction. The session closes after that execution
+completes if its final tracked control ends the transaction. Statements after
+a closing control in the same execution still run normally.
+
+Supported controls are standalone BEGIN;, COMMIT;, and ROLLBACK; lines outside
+SQL strings, quoted identifiers, dollar-quoted strings, and comments. Multiple
+controls are tracked in execution order. Inline controls, aliases (e.g. END),
+transaction options, and AND CHAIN are outside the tracking contract. Execute
+complete SQL blocks.
+
+Each execution has a separate result batch. Its mode-0600 temporary SQL file
+is removed when a private completion marker arrives. Another execution in the
+same buffer is rejected while it is busy; other buffers remain independent,
+even with the same connection. DBTerminal uses a separate session.
+
+SQL errors leave the process alive and preserve PostgreSQL's normal failed
+transaction behavior. Execute ROLLBACK; to recover. Unexpected process exit is
+reported and clears the transaction state without retrying SQL. Transaction
+jobs ignore psql startup files, disable paging, and set ON_ERROR_STOP and
+ON_ERROR_ROLLBACK off.
+
+A buffer with a transaction cannot select a different connection or use DBNew.
+DBEdit and DBDelete reject connections used by any open transaction before
+changing storage. The statusline shows " [DB: name; TX]" while a session exists.
+
+Hiding or switching buffers preserves the session. Deleting or wiping its
+source buffer, disconnecting it, or exiting Vim closes the job and removes
+pending temporary files. Closing the connection discards any open transaction.
+Transaction state is only in memory and does not survive restarting Vim.
 
 ==============================================================================
 STORAGE AND SECURITY                                         *pgquery-storage*
@@ -135,9 +189,8 @@ The default store is:
 Override it before pgquery loads: >
   let g:pgquery_store_path = '~/.config/vim/pgquery.json'
 <
-The version 2 document has this shape: >
+The document has this shape: >
   {
-    "version": 2,
     "connections": {"local": "postgresql://user@localhost/app"},
     "files": {"/home/me/app/queries.sql": "local"}
   }
@@ -161,15 +214,4 @@ No mappings are installed. Examples: >
   xnoremap <silent> <leader>dq :DBExecute<CR>
   nnoremap <silent> <leader>dt :DBTerminal<CR>
 <
-==============================================================================
-MIGRATING                                                 *pgquery-migrating*
-
-Version 1 stores are readable and retain their named connections. Project
-mappings are ignored. The next storage update writes version 2. DBSetProject
-has been removed; use |:DBConnect| to select a connection for each file.
-
-Remove any old `source sql.vim` line from your vimrc. The old .dev.dburl,
-g:db, SetDBFile command, and global functions are not supported. Use |:DBNew|
-to import each database URL into the protected central store.
-
 vim:tw=78:ts=8:noet:ft=help:norl:
