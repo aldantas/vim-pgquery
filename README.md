@@ -29,7 +29,7 @@ vim -u NONE -c 'helptags ~/.vim/pack/plugins/start/vim-pgquery/doc' -c quit
 - `:DBConnect` selects and remembers a saved connection for the current file.
   Vim builds with popups use `popup_menu()`; other builds use a numbered prompt. The list
   shows `name — user@host:port/database`, never the password or URL parameters.
-- `:DBShowURL` displays the current buffer's full saved connection URL. This
+- `:DBCurrent` displays the current buffer's full saved connection URL. This
   includes credentials and URL parameters when present.
 - `:DBEdit [name]` changes a connection's name and URL. When no name is given,
   it presents the saved-connection picker; leave the URL prompt blank to keep
@@ -124,9 +124,21 @@ preserved, and obsolete project defaults are ignored. The next change writes
 the version 2 format. `:DBSetProject` has been removed; select a connection for
 each file with `:DBConnect`.
 
-Database URLs are plaintext despite the file permissions. Prefer URLs without
-passwords together with `.pgpass` or another PostgreSQL credential mechanism
-when stronger protection is needed. URLs are passed as individual process
-arguments and are not interpolated into a shell command.
+Database URLs, including any embedded passwords, are stored as plaintext.
+Mode `0600` restricts access to your Unix user, but processes running as you,
+root, and copies in backups can still expose those credentials. The temporary
+store file is written before its permissions are restricted, leaving a brief
+exposure window if the directory is accessible and your umask permits reads.
+
+Full URLs are also passed to `psql` as individual process arguments, which may
+be visible through process inspection depending on operating-system access
+restrictions. They are not interpolated into a shell command. `:DBCurrent`
+displays the full URL, including passwords, so take care during screen sharing.
+
+Prefer password-free URLs such as `postgresql://user@host/database` and put
+passwords in PostgreSQL's [`~/.pgpass` file](https://www.postgresql.org/docs/current/libpq-pgpass.html)
+with permissions set using `chmod 0600 ~/.pgpass`. This keeps passwords out of
+the plugin store and process arguments. `.pgpass` itself stores plaintext
+passwords, so protect it and its backups as well.
 
 See `:help pgquery` for the complete reference.

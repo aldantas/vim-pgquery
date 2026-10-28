@@ -45,8 +45,8 @@ COMMANDS                                                   *pgquery-commands*
                 fallback. Canceling does not alter the selection. Labels omit
                 passwords, query parameters, and fragments.
 
-                                                        *:DBShowURL*
-:DBShowURL      Display the current buffer's full saved connection URL in the
+                                                        *:DBCurrent*
+:DBCurrent      Display the current buffer's full saved connection URL in the
                 command area. It includes any password and URL parameters.
                 A disconnected buffer reports an error.
 

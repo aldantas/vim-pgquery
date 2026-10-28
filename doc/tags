@@ -1,9 +1,9 @@
 :DBConnect	pgquery.txt	/*:DBConnect*
+:DBCurrent	pgquery.txt	/*:DBCurrent*
 :DBDelete	pgquery.txt	/*:DBDelete*
 :DBEdit	pgquery.txt	/*:DBEdit*
 :DBExecute	pgquery.txt	/*:DBExecute*
 :DBNew	pgquery.txt	/*:DBNew*
-:DBShowURL	pgquery.txt	/*:DBShowURL*
 :DBTerminal	pgquery.txt	/*:DBTerminal*
 g:pgquery_eager_dadbod_completion	pgquery.txt	/*g:pgquery_eager_dadbod_completion*
 pgquery	pgquery.txt	/*pgquery*

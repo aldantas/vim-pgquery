@@ -9,7 +9,7 @@ endif
 
 command! -nargs=0 DBNew call pgquery#new_prompt()
 command! -nargs=0 DBConnect call pgquery#connect()
-command! -nargs=0 DBShowURL call pgquery#show_url()
+command! -nargs=0 DBCurrent call pgquery#show_url()
 command! -nargs=? -complete=customlist,pgquery#complete_connections DBEdit
       \ call pgquery#edit_prompt(<q-args>)
 command! -nargs=? -complete=customlist,pgquery#complete_connections DBDelete
