@@ -15,7 +15,7 @@ CONTENTS                                                     *pgquery-contents*
 ==============================================================================
 INTRODUCTION                                                       *pgquery*
 
-vim-pgquery executes the nonblank SQL block under the cursor, or an explicit
+vim-pgquery executes the SQL block under the cursor, or an explicit
 line range, with psql. Named connections are persisted centrally, while the
 active connection is local to each buffer. Selecting a connection does not
 contact PostgreSQL unless eager vim-dadbod-completion integration is active;
@@ -68,13 +68,29 @@ COMMANDS                                                   *pgquery-commands*
                                                        *:DBExecute*
 :[range]DBExecute
                 Run {range} asynchronously. A Visual selection supplies the
-                range automatically. Without a range, run the nonblank block
-                containing the cursor; blank lines delimit blocks. Output and
-                errors are accumulated independently for every job and shown
-                in a read-only scratch split. A nonzero psql exit status is
-                reported. The temporary SQL file is removed when the job
+                range automatically. Without a range, run the SQL block
+                containing the cursor; blank lines delimit blocks by default.
+                See |g:pgquery_comment_as_block_delimiter| for comment breakpoints.
+                Output and errors are accumulated independently for every job
+                and shown in a read-only scratch split. A nonzero psql exit
+                status is reported. The temporary SQL file is removed when the job
                 exits, or the transaction execution completes. See
                 |pgquery-transactions| for sessions spanning executions.
+
+                                  *g:pgquery_comment_as_block_delimiter*
+                Boolean controlling cursor-block boundaries. Default: 0.
+                0  Empty or whitespace-only lines delimit blocks.
+                1  Lines beginning with -- after optional whitespace delimit
+                   blocks. Blank lines remain inside blocks; inline comments
+                   do not delimit blocks. Any comment text is allowed after
+                   --, with or without a space; no special marker is required.
+                The block extends to the previous and next delimiter, or the
+                start/end of the file. Delimiter lines are excluded. Running
+                on a delimiter or whitespace-only block sends no SQL.
+                Explicit ranges and Visual selections ignore this setting.
+                Change it at any time, or set it in your vimrc: >
+                  let g:pgquery_comment_as_block_delimiter = 1
+<
 
                                         *g:pgquery_confirm_destructive*
                 DELETE and TRUNCATE outside a live transaction in the current

@@ -630,15 +630,16 @@ function! pgquery#show_url() abort
 endfunction
 
 function! s:sql_block(line_number) abort
-  if a:line_number < 1 || a:line_number > line('$') || getline(a:line_number) =~# '^\s*$'
+  let boundary = get(g:, 'pgquery_comment_as_block_delimiter', 0) ? '^\s*--' : '^\s*$'
+  if a:line_number < 1 || a:line_number > line('$') || getline(a:line_number) =~# boundary
     return []
   endif
   let first = a:line_number
-  while first > 1 && getline(first - 1) !~# '^\s*$'
+  while first > 1 && getline(first - 1) !~# boundary
     let first -= 1
   endwhile
   let last = a:line_number
-  while last < line('$') && getline(last + 1) !~# '^\s*$'
+  while last < line('$') && getline(last + 1) !~# boundary
     let last += 1
   endwhile
   return getline(first, last)
@@ -896,8 +897,8 @@ function! pgquery#execute(...) abort
     endif
   else
     let sql = s:sql_block(line('.'))
-    if empty(sql)
-      return s:error('no nonblank SQL block under the cursor')
+    if join(sql, '') !~# '\S'
+      return s:error('no SQL block under the cursor')
     endif
   endif
   if get(g:, 'pgquery_confirm_destructive', 1)
