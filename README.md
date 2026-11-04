@@ -10,7 +10,7 @@ See `:help pgquery` for the complete reference.
 Install the repository with your plugin manager, or as a native Vim package:
 
 ```sh
-git clone https://github.com/your-user/vim-pgquery.git \
+git clone https://github.com/aldantas/vim-pgquery.git \
   ~/.vim/pack/plugins/start/vim-pgquery
 vim -u NONE -c 'helptags ~/.vim/pack/plugins/start/vim-pgquery/doc' -c quit
 ```
@@ -34,11 +34,10 @@ vim -u NONE -c 'helptags ~/.vim/pack/plugins/start/vim-pgquery/doc' -c quit
 | `:[range]DBExecute` | Run the current SQL block or selected lines asynchronously. |
 | `:DBTerminal` | Open `psql` with the current connection in a terminal. |
 
-The plugin deliberately installs no mappings. Optional examples:
-
+Suggested mappings for both normal and visual mode are:
 ```vim
-nnoremap <silent> <leader>e :DBExecute<CR>
-xnoremap <silent> <leader>e :DBExecute<CR>
+autocmd FileType sql nnoremap <buffer> <silent> <leader>e :DBExecute<CR>
+autocmd FileType sql xnoremap <buffer> <silent> <leader>e :DBExecute<CR>
 ```
 
 ## Transactions across executions
